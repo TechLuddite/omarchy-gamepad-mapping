@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "co.klair.controller-control",
   "name": "Controller Control",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Parminder Klair",
   "license": "MIT",
   "description": "Map game controller button combos to desktop shortcuts and commands.",

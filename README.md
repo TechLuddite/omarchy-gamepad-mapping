@@ -18,7 +18,7 @@ terminal through the keybinding you already have. Nothing is duplicated.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/perminder-klair/controller-control.git --enable
+omarchy plugin add https://github.com/perminder-klair/omarchy-controller-control.git --enable
 ```
 
 From a local checkout instead:
@@ -142,7 +142,10 @@ handles it exactly like a real shortcut) or `exec` (a shell command). Options:
 - `enabled: false` — keep a binding around without it firing.
 
 **`device.match`** is a list of case-insensitive substrings matched against
-the device name; an empty list matches any gamepad. **`device.exclusive`**
+the device name. It defaults to empty, which matches any gamepad — narrow it
+when you own several pads and only want one of them driving the desktop. A
+keyboard-shaped device (an 8BitDo in keyboard mode) is only picked up when you
+name it explicitly, so an empty list can never latch onto your real keyboard. **`device.exclusive`**
 grabs the pad so nothing else — games, Steam, the browser — sees it.
 
 The daemon reloads on `SIGHUP`, which is what the panel and

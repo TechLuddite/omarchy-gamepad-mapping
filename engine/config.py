@@ -33,9 +33,15 @@ DEFAULT_SETTINGS: dict = {
 }
 
 DEFAULT_DEVICE: dict = {
-    # Name substrings to match, case-insensitive. Empty list = any gamepad.
-    # 8BitDo pads in X-input mode announce themselves as an Xbox pad.
-    "match": ["8bitdo", "xbox wireless controller"],
+    # Name substrings to match, case-insensitive. Empty list = any gamepad,
+    # which is the default so the plugin works on first run whatever you own.
+    # Narrow it (e.g. ["8bitdo"]) when you have more than one pad and only want
+    # one of them driving the desktop.
+    #
+    # Note that an empty list also means keyboard-mode pads are ignored: a
+    # keyboard-shaped device is only ever considered when you name it
+    # explicitly, so this can never latch onto your actual keyboard.
+    "match": [],
     # Take the pad away from every other application (games, Steam, browsers).
     "exclusive": False,
     # "nintendo" makes displayed labels match the plastic on 8BitDo pads.
