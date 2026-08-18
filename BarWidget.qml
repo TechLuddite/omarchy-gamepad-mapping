@@ -15,6 +15,7 @@ BarWidget {
 
   readonly property var service: bar?.shell?.serviceFor("co.klair.controller-control")
   readonly property bool connected: service ? service.connected === true : false
+  readonly property bool enabled: service ? service.enabled === true : true
   readonly property string deviceName: service ? service.deviceName : ""
   readonly property int bindingCount: service ? service.bindingCount : 0
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", false)
@@ -87,20 +88,29 @@ BarWidget {
     bar: root.bar
     text: root.glyph
     tooltipText: root.connected
-      ? root.deviceName + " — " + root.bindingCount + " bindings"
+      ? (root.enabled
+          ? root.deviceName + " — " + root.bindingCount + " bindings"
+          : root.deviceName + " — disabled")
       : "No controller connected"
 
     // Dim rather than hide when nothing is paired, so the widget still says
     // "the pad is off" instead of silently vanishing.
     readonly property color baseForeground: root.bar ? root.bar.barForeground : Color.foreground
-    foreground: root.connected ? baseForeground : Qt.darker(baseForeground, 2.0)
+    // Three states worth telling apart at a glance: working, connected but
+    // switched off, and nothing paired at all.
+    foreground: !root.connected
+      ? Qt.darker(baseForeground, 2.0)
+      : (root.enabled ? baseForeground : Qt.darker(baseForeground, 1.7))
 
     // The pulse on each fired binding.
     active: root.flashing
     activeColor: Color.accent
 
     onPressed: function (b) {
-      if (b === Qt.RightButton && root.service) root.service.reload()
+      // Middle click is the quickest way to silence the pad without
+      // opening anything.
+      if (b === Qt.MiddleButton && root.service) root.service.toggleEnabled()
+      else if (b === Qt.RightButton && root.service) root.service.reload()
       else root.togglePanel()
     }
 

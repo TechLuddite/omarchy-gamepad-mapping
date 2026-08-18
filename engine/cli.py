@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import select
+import signal
 import sys
 import time
 from pathlib import Path
@@ -13,7 +14,7 @@ from pathlib import Path
 from . import __version__
 from .actions import ActionRunner
 from .buttons import format_combo, parse_combo
-from .config import CONFIG_PATH, Binding, Config, ConfigError, load
+from .config import CONFIG_PATH, PID_PATH, Binding, Config, ConfigError, load
 from .daemon import Daemon
 from .devices import DeviceGone, Gamepad, find_pads, scan
 from .keys import KeyParseError, parse_keys
@@ -61,6 +62,61 @@ def fail(message: str) -> int:
 
 def _load(args) -> Config:
     return load(Path(args.config) if args.config else None)
+
+
+def _daemon_pid() -> int | None:
+    """The running daemon's pid, from its pid file, or None.
+
+    The pid is verified against /proc before it is used. A pid file can go
+    stale and the number be recycled by an unrelated process, and signalling
+    the wrong process is exactly the kind of mistake that is invisible until
+    it does damage.
+    """
+    try:
+        pid = int(PID_PATH.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    try:
+        if os.stat(f"/proc/{pid}").st_uid != os.getuid():
+            return None
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            argv = [part.decode("utf-8", "replace") for part in fh.read().split(b"\0")]
+    except OSError:
+        return None
+    # Must genuinely be `python -m engine ... daemon`, as whole arguments --
+    # not merely a command line that mentions those words somewhere.
+    if "engine" not in argv or "daemon" not in argv:
+        return None
+    return pid
+
+
+def _notify_daemon(sig: int) -> bool:
+    """Signal the running daemon. Returns whether one was reached."""
+    pid = _daemon_pid()
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, sig)
+        return True
+    except OSError:
+        return False
+
+
+def _set_enabled(args, value: bool | None) -> int:
+    config = _load(args)
+    config.enabled = (not config.enabled) if value is None else value
+    config.save()
+    reached = _notify_daemon(signal.SIGHUP)
+    state = green("enabled") if config.enabled else yellow("disabled")
+    note = (
+        dim("  (applied to the running daemon)")
+        if reached
+        else dim("  (saved; no running daemon, applies when one starts)")
+    )
+    print(f"controller-control is now {state}{note}")
+    return 0
 
 
 def _open_one_pad(config: Config, *, exclusive: bool = False):
@@ -125,7 +181,10 @@ def cmd_list(args) -> int:
     if not bindings:
         print("No bindings configured.")
         return 0
-    print(bold(f"{len(bindings)} binding(s)  {dim(str(config.path))}"))
+    header = f"{len(bindings)} binding(s)  {dim(str(config.path))}"
+    if not config.enabled:
+        header += "  " + yellow("[DISABLED]")
+    print(bold(header))
     width = max(len(b.label(config.layout)) for b in bindings)
     for binding in bindings:
         label = binding.label(config.layout).ljust(width)
@@ -391,6 +450,25 @@ def cmd_doctor(args) -> int:
     return 1 if problems else 0
 
 
+def cmd_enable(args) -> int:
+    return _set_enabled(args, True)
+
+
+def cmd_disable(args) -> int:
+    return _set_enabled(args, False)
+
+
+def cmd_toggle(args) -> int:
+    return _set_enabled(args, None)
+
+
+def cmd_pause(args) -> int:
+    reached = _notify_daemon(signal.SIGUSR2 if args.resume else signal.SIGUSR1)
+    verb = "resumed" if args.resume else "paused"
+    print(f"{verb} the running daemon" if reached else "no running daemon")
+    return 0 if reached else 1
+
+
 def cmd_daemon(args) -> int:
     try:
         config = _load(args)
@@ -457,6 +535,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_init)
 
+    p = sub.add_parser("enable", help="turn bindings back on")
+    p.set_defaults(func=cmd_enable)
+
+    p = sub.add_parser("disable", help="stop bindings firing, keeping them all")
+    p.set_defaults(func=cmd_disable)
+
+    p = sub.add_parser("toggle", help="flip between enabled and disabled")
+    p.set_defaults(func=cmd_toggle)
+
+    p = sub.add_parser("pause", help="mute firing until resumed (not persisted)")
+    p.add_argument("--resume", action="store_true", help="resume instead")
+    p.set_defaults(func=cmd_pause)
+
     p = sub.add_parser("doctor", help="check permissions and configuration")
     p.set_defaults(func=cmd_doctor)
 
@@ -483,4 +574,12 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 130
     except BrokenPipeError:
+        # Python flushes stdout again during shutdown; if the pipe is already
+        # gone that second failure sets exit status 120. Redirect the fd so
+        # the final flush lands somewhere harmless.
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, sys.stdout.fileno())
+        except OSError:
+            pass
         return 0

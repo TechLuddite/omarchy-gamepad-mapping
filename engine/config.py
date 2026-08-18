@@ -15,6 +15,19 @@ XDG_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 CONFIG_DIR = XDG_CONFIG / "controller-control"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
+# Where the running daemon advertises its pid, so the CLI can signal it.
+# Identifying the daemon by scanning /proc for a command line mentioning
+# "engine daemon" is not safe: an ordinary shell running a command that merely
+# contains those words matches too, and would then be sent SIGHUP.
+_RUNTIME = Path(
+    os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/controller-control-{os.getuid()}"
+)
+# Overridable so a test run cannot stomp on the pid file of a daemon that is
+# genuinely running on the same machine.
+PID_PATH = Path(
+    os.environ.get("CONTROLLER_CONTROL_PID_FILE") or _RUNTIME / "controller-control.pid"
+)
+
 DEFAULT_SETTINGS: dict = {
     # How long to wait for more buttons before deciding a chord is complete.
     # Only applied when a longer binding could still match, so unambiguous
@@ -189,6 +202,10 @@ class Config:
                 f"(this build understands {CONFIG_VERSION})"
             )
 
+        # A master switch, so the pad can be silenced without losing bindings
+        # or dropping the Bluetooth connection.
+        self.enabled = bool(raw.get("enabled", True))
+
         self.device = {**DEFAULT_DEVICE, **(raw.get("device") or {})}
         self.settings = {**DEFAULT_SETTINGS, **(raw.get("settings") or {})}
 
@@ -260,6 +277,7 @@ class Config:
     def to_dict(self) -> dict:
         return {
             "version": CONFIG_VERSION,
+            "enabled": self.enabled,
             "device": self.device,
             "settings": self.settings,
             "bindings": [b.to_dict() for b in self.bindings],

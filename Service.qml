@@ -22,6 +22,10 @@ Item {
 
   property bool running: false
   property bool connected: false
+  // Master switch, persisted in the config file.
+  property bool enabled: true
+  // Transient mute, held only while the panel is recording a combo.
+  property bool paused: false
   property string deviceName: ""
   property string devicePath: ""
   property bool exclusive: false
@@ -44,16 +48,45 @@ Item {
 
   signal comboCaptured(var combo)
   signal fired(string label, string description)
+  signal suppressed(string label, string reason)
 
   function startCapture() {
     root._capturePeak = []
     root.capturedCombo = []
     root.capturing = true
+    // Mute firing first: the buttons you are about to press are quite likely
+    // the ones you are rebinding, and recording a combo should not also run
+    // whatever it currently does.
+    root.pauseFiring()
   }
 
   function cancelCapture() {
     root.capturing = false
     root._capturePeak = []
+    root.resumeFiring()
+  }
+
+  function pauseFiring() {
+    if (root.daemonPid > 0) {
+      pauseProc.command = ["kill", "-USR1", String(root.daemonPid)]
+      pauseProc.running = true
+    }
+  }
+
+  function resumeFiring() {
+    if (root.daemonPid > 0) {
+      resumeProc.command = ["kill", "-USR2", String(root.daemonPid)]
+      resumeProc.running = true
+    }
+  }
+
+  function setEnabled(value) {
+    enableProc.command = [root.cli, value ? "enable" : "disable"]
+    enableProc.running = true
+  }
+
+  function toggleEnabled() {
+    root.setEnabled(!root.enabled)
   }
 
   function _captureButton(button, pressed, held) {
@@ -68,6 +101,7 @@ Item {
       root.capturing = false
       root.capturedCombo = combo
       root._capturePeak = []
+      root.resumeFiring()
       root.comboCaptured(combo)
     }
   }
@@ -113,11 +147,14 @@ Item {
     case "started":
       root.running = true
       root.daemonPid = Number(event.pid) || 0
+      if (event.enabled !== undefined) root.enabled = event.enabled === true
       break
     case "state":
       root.connected = event.connected === true
       root.bindingCount = Number(event.bindings) || 0
       root.exclusive = event.exclusive === true
+      if (event.enabled !== undefined) root.enabled = event.enabled === true
+      if (event.paused !== undefined) root.paused = event.paused === true
       if (Array.isArray(event.devices) && event.devices.length > 0) {
         root.deviceName = String(event.devices[0].name || "")
         root.devicePath = String(event.devices[0].path || "")
@@ -150,6 +187,12 @@ Item {
       break
     case "reloaded":
       root.bindingCount = Number(event.bindings) || 0
+      if (event.enabled !== undefined) root.enabled = event.enabled === true
+      break
+    case "suppressed":
+      // Authoritative paused/enabled state arrives on "state" events; this
+      // one only reports that a combo was recognised and swallowed.
+      root.suppressed(String(event.label || ""), String(event.reason || ""))
       break
     case "error":
       root.lastError = String(event.message || "")
@@ -187,6 +230,15 @@ Item {
   }
 
   Process { id: reloadProc }
+  Process { id: pauseProc }
+  Process { id: resumeProc }
+
+  Process {
+    id: enableProc
+    // `enable`/`disable` rewrite the config and signal the daemon themselves,
+    // so there is nothing to reload afterwards.
+    onExited: function () { root.reload() }
+  }
 
   Timer {
     id: restartTimer
@@ -202,6 +254,8 @@ Item {
       return JSON.stringify({
         running: root.running,
         connected: root.connected,
+        enabled: root.enabled,
+        paused: root.paused,
         device: root.deviceName,
         bindings: root.bindingCount,
         exclusive: root.exclusive,
@@ -218,6 +272,21 @@ Item {
     function restart(): string {
       root.restart()
       return "ok"
+    }
+
+    function enable(): string {
+      root.setEnabled(true)
+      return "ok"
+    }
+
+    function disable(): string {
+      root.setEnabled(false)
+      return "ok"
+    }
+
+    function toggle(): string {
+      root.toggleEnabled()
+      return root.enabled ? "disabling" : "enabling"
     }
   }
 

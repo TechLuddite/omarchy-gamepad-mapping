@@ -29,6 +29,16 @@ Panel {
   readonly property string deviceName: service ? service.deviceName : ""
   readonly property var heldButtons: service ? service.heldButtons : []
   readonly property bool capturing: service ? service.capturing === true : false
+  readonly property bool enabled: service ? service.enabled === true : true
+
+  // Reads differently at each step, because "Record combo" on its own does
+  // not tell you that the controller is what you are meant to press.
+  readonly property string captureHint: {
+    if (!connected) return "Connect a controller to record a combo."
+    if (capturing) return "Press the buttons on your controller now, then let go. Bindings are muted while recording."
+    if (draftCombo.length > 0) return "Captured " + comboText(draftCombo) + ". Now choose what it should do."
+    return "Press Record, then press the buttons on your controller."
+  }
 
   property var bindings: []
   property string configPath: ""
@@ -148,7 +158,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(460))
+    contentWidth: panel.fittedContentWidth(Style.space(470))
     contentHeight: panel.fittedContentHeight(content.implicitHeight)
 
     PanelKeyCatcher {
@@ -161,7 +171,7 @@ Panel {
         width: parent.width
         spacing: Style.space(10)
 
-        // ---- status ------------------------------------------------------
+        // ---- status: device, live buttons, master switch, refresh --------
 
         RowLayout {
           Layout.fillWidth: true
@@ -171,7 +181,9 @@ Panel {
             width: Style.space(8)
             height: width
             radius: width / 2
-            color: root.connected ? Color.accent : Qt.darker(root.barForeground, 2.2)
+            color: root.connected
+              ? (root.enabled ? Color.accent : Qt.darker(root.barForeground, 1.6))
+              : Qt.darker(root.barForeground, 2.2)
           }
 
           Text {
@@ -181,6 +193,40 @@ Panel {
             elide: Text.ElideRight
             font.family: Style.font.family
             font.pixelSize: Style.font.body
+          }
+
+          // Whatever is held right now, sitting just before the controls so
+          // you can watch the pad answer while your hands are on it.
+          Row {
+            spacing: Style.space(4)
+
+            Repeater {
+              model: root.heldButtons
+
+              Rectangle {
+                required property string modelData
+                radius: Style.space(4)
+                color: Style.selectedAccentFill
+                implicitWidth: heldLabel.implicitWidth + Style.space(10)
+                implicitHeight: heldLabel.implicitHeight + Style.space(4)
+
+                Text {
+                  id: heldLabel
+                  anchors.centerIn: parent
+                  text: parent.modelData
+                  color: Color.accent
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+              }
+            }
+          }
+
+          ToggleSwitch {
+            checked: root.enabled
+            foreground: root.barForeground
+            onToggled: if (root.service) root.service.toggleEnabled()
           }
 
           PanelActionButton {
@@ -194,36 +240,6 @@ Panel {
           }
         }
 
-        // ---- live buttons ------------------------------------------------
-
-        Flow {
-          Layout.fillWidth: true
-          spacing: Style.space(6)
-          visible: root.heldButtons.length > 0
-
-          Repeater {
-            model: root.heldButtons
-
-            Rectangle {
-              required property string modelData
-              radius: Style.space(4)
-              color: Style.selectedAccentFill
-              implicitWidth: heldLabel.implicitWidth + Style.space(12)
-              implicitHeight: heldLabel.implicitHeight + Style.space(6)
-
-              Text {
-                id: heldLabel
-                anchors.centerIn: parent
-                text: parent.modelData
-                color: Color.accent
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-            }
-          }
-        }
-
         PanelSeparator {
           Layout.fillWidth: true
           foreground: root.barForeground
@@ -232,22 +248,25 @@ Panel {
         // ---- existing bindings -------------------------------------------
 
         PanelSectionHeader {
-          text: root.bindings.length + " BINDINGS"
-          foreground: root.barForeground
+          text: root.enabled
+            ? root.bindings.length + " BINDINGS"
+            : root.bindings.length + " BINDINGS · DISABLED"
+          foreground: root.enabled ? root.barForeground : Color.urgent
         }
 
         Flickable {
           Layout.fillWidth: true
-          Layout.preferredHeight: Math.min(bindingColumn.implicitHeight, Style.space(260))
+          Layout.preferredHeight: Math.min(bindingColumn.implicitHeight, Style.space(280))
           contentWidth: width
           contentHeight: bindingColumn.implicitHeight
           clip: true
           interactive: contentHeight > height
+          opacity: root.enabled ? 1.0 : 0.45
 
           ColumnLayout {
             id: bindingColumn
             width: parent.width
-            spacing: Style.space(2)
+            spacing: Style.space(6)
 
             Repeater {
               model: root.bindings
@@ -258,8 +277,14 @@ Panel {
                 Layout.fillWidth: true
                 spacing: Style.space(8)
 
+                readonly property string actionText: bindingRow.modelData.keys
+                  ? bindingRow.modelData.keys
+                  : (bindingRow.modelData.exec || "")
+                readonly property bool isCommand: !bindingRow.modelData.keys
+
                 Text {
-                  Layout.preferredWidth: Style.space(120)
+                  Layout.preferredWidth: Style.space(112)
+                  Layout.alignment: Qt.AlignTop
                   text: bindingRow.modelData.combo
                   color: Color.accent
                   elide: Text.ElideRight
@@ -268,19 +293,37 @@ Panel {
                   font.bold: true
                 }
 
-                Text {
+                // Description on top, what it actually does underneath --
+                // a description alone does not tell you which shortcut it
+                // sends, which is the thing you need when editing.
+                ColumnLayout {
                   Layout.fillWidth: true
-                  text: bindingRow.modelData.description
-                    && bindingRow.modelData.description !== ""
-                    ? bindingRow.modelData.description
-                    : (bindingRow.modelData.keys || bindingRow.modelData.exec || "")
-                  color: root.barForeground
-                  elide: Text.ElideRight
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
+                  spacing: 0
+
+                  Text {
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    text: bindingRow.modelData.description || ""
+                    color: root.barForeground
+                    elide: Text.ElideRight
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  Text {
+                    Layout.fillWidth: true
+                    text: (bindingRow.isCommand ? "$ " : "") + bindingRow.actionText
+                      + (bindingRow.modelData.repeat ? "  ·  repeat" : "")
+                      + (bindingRow.modelData.hold ? "  ·  hold" : "")
+                    color: Qt.darker(root.barForeground, 1.6)
+                    elide: Text.ElideRight
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
                 }
 
                 PanelActionButton {
+                  Layout.alignment: Qt.AlignTop
                   iconText: "󰆴"
                   tooltipText: "Remove binding"
                   foreground: root.barForeground
@@ -304,16 +347,29 @@ Panel {
           foreground: root.barForeground
         }
 
+        // Step 1 of the flow, spelled out: the pad is the input device for
+        // this form, and that is not obvious from a button labelled "Record".
+        Text {
+          Layout.fillWidth: true
+          text: root.captureHint
+          color: root.capturing ? Color.accent : Qt.darker(root.barForeground, 1.5)
+          wrapMode: Text.WordWrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
         RowLayout {
           Layout.fillWidth: true
           spacing: Style.space(8)
 
           Button {
             text: root.capturing
-              ? "Press a combo…"
-              : (root.draftCombo.length > 0 ? root.comboText(root.draftCombo) : "Record combo")
+              ? "Waiting…"
+              : (root.draftCombo.length > 0
+                  ? root.comboText(root.draftCombo)
+                  : "1. Record combo")
             enabled: root.connected
-            selected: root.capturing
+            selected: root.capturing || root.draftCombo.length > 0
             bordered: true
             foreground: root.barForeground
             onClicked: root.beginCapture()
@@ -334,7 +390,9 @@ Panel {
           id: actionField
           Layout.fillWidth: true
           foreground: root.barForeground
-          placeholderText: root.draftIsCommand ? "omarchy capture screenshot" : "SUPER+RETURN"
+          placeholderText: root.draftIsCommand
+            ? "2. Command to run, e.g. omarchy capture screenshot"
+            : "2. Keys to send, e.g. SUPER+RETURN"
           onAccepted: root.saveDraft()
         }
 
@@ -351,7 +409,7 @@ Panel {
           spacing: Style.space(8)
 
           Button {
-            text: "Save binding"
+            text: "3. Save binding"
             enabled: root.draftReady
             bordered: true
             foreground: root.barForeground

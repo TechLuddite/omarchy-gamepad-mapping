@@ -13,6 +13,7 @@ import json
 import os
 import queue
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -61,7 +62,13 @@ class DaemonHarness:
         self.config_path.write_text(json.dumps(config))
         self.events: queue.Queue = queue.Queue()
         self.all: list[dict] = []
-        env = {**os.environ, "PYTHONPATH": str(ROOT), "PYTHONUNBUFFERED": "1"}
+        self.pid_file = Path(self.dir) / "daemon.pid"
+        env = {
+            **os.environ,
+            "PYTHONPATH": str(ROOT),
+            "PYTHONUNBUFFERED": "1",
+            "CONTROLLER_CONTROL_PID_FILE": str(self.pid_file),
+        }
         self.proc = subprocess.Popen(
             [
                 SYSTEM_PYTHON,
@@ -301,3 +308,119 @@ class TestHeldReporting(unittest.TestCase):
         l_release = next(e for e in events if e["button"] == "L" and not e["pressed"])
         self.assertEqual(r_release["held"], ["L"])
         self.assertEqual(l_release["held"], [])
+
+
+DISABLED_CONFIG = {**CONFIG, "enabled": False}
+
+
+class TestEnableDisable(unittest.TestCase):
+    """The master switch, and the transient pause used while recording."""
+
+    def test_disabled_config_suppresses_instead_of_firing(self):
+        harness = DaemonHarness(DISABLED_CONFIG)
+        try:
+            started = harness.wait_for("started")
+            self.assertFalse(started["enabled"])
+            pad = VirtualPad()
+            harness.wait_for("connected", timeout=8.0)
+            harness.drain()
+            pad.tap("A")
+            suppressed = harness.wait_for("suppressed", timeout=3.0)
+            self.assertEqual(suppressed["combo"], ["A"])
+            self.assertEqual(suppressed["reason"], "disabled")
+            self.assertEqual(harness.fires(), [], "a disabled binding still fired")
+            pad.close()
+        finally:
+            harness.stop()
+
+    def test_pause_and_resume_signals(self):
+        harness = DaemonHarness(CONFIG)
+        try:
+            started = harness.wait_for("started")
+            pid = started["pid"]
+            pad = VirtualPad()
+            harness.wait_for("connected", timeout=8.0)
+
+            harness.drain()
+            pad.tap("A")
+            harness.wait_for("fire", timeout=3.0)
+
+            os.kill(pid, signal.SIGUSR1)
+            time.sleep(0.3)
+            harness.drain()
+            pad.tap("A")
+            suppressed = harness.wait_for("suppressed", timeout=3.0)
+            self.assertEqual(suppressed["reason"], "paused")
+            self.assertEqual(harness.fires(), [], "paused daemon still fired")
+
+            os.kill(pid, signal.SIGUSR2)
+            time.sleep(0.3)
+            harness.drain()
+            pad.tap("A")
+            harness.wait_for("fire", timeout=3.0)
+            pad.close()
+        finally:
+            harness.stop()
+
+    def test_pid_file_is_written_and_removed(self):
+        harness = DaemonHarness(CONFIG)
+        try:
+            started = harness.wait_for("started")
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline and not harness.pid_file.exists():
+                time.sleep(0.05)
+            self.assertTrue(harness.pid_file.exists(), "no pid file written")
+            self.assertEqual(
+                harness.pid_file.read_text().strip(), str(started["pid"])
+            )
+        finally:
+            harness.stop()
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline and harness.pid_file.exists():
+            time.sleep(0.05)
+        self.assertFalse(harness.pid_file.exists(), "pid file left behind")
+
+
+class TestPauseIsObservable(unittest.TestCase):
+    """A muted daemon has to say so, or the UI shows a stale switch."""
+
+    def test_state_event_follows_pause_and_resume(self):
+        harness = DaemonHarness(CONFIG)
+        try:
+            pid = harness.wait_for("started")["pid"]
+            harness.wait_for("state", timeout=6.0)
+
+            harness.drain()
+            os.kill(pid, signal.SIGUSR1)
+            paused = harness.wait_for("state", timeout=3.0)
+            self.assertTrue(paused["paused"], "pause was never announced")
+
+            harness.drain()
+            os.kill(pid, signal.SIGUSR2)
+            resumed = harness.wait_for("state", timeout=3.0)
+            self.assertFalse(resumed["paused"], "resume was never announced")
+        finally:
+            harness.stop()
+
+
+class TestSignalLatency(unittest.TestCase):
+    """A signal must interrupt the poll, not wait out the rescan interval."""
+
+    def test_pause_is_announced_promptly(self):
+        slow = {**CONFIG, "settings": {**CONFIG["settings"], "rescan_interval_s": 5.0}}
+        harness = DaemonHarness(slow)
+        try:
+            pid = harness.wait_for("started")["pid"]
+            harness.wait_for("state", timeout=8.0)
+            harness.drain()
+
+            sent = time.monotonic()
+            os.kill(pid, signal.SIGUSR1)
+            state = harness.wait_for("state", timeout=4.0)
+            elapsed = time.monotonic() - sent
+
+            self.assertTrue(state["paused"])
+            # Well inside the 5s rescan interval it would otherwise wait for.
+            self.assertLess(elapsed, 1.5, f"took {elapsed:.2f}s to react")
+        finally:
+            harness.stop()

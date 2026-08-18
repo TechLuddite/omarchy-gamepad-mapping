@@ -56,7 +56,16 @@ Pair it once with `bluetoothctl`, then `trust` it so it reconnects on its own.
 
 The bar widget shows a controller glyph — solid when a pad is connected, dim
 when not, and it pulses whenever a binding fires. Click it to open the
-bindings panel, where **Record combo** captures whatever you press next.
+bindings panel; middle-click toggles the pad off and on without opening
+anything.
+
+The panel header carries the master switch, along with the buttons you are
+holding right now, so you can watch the pad answer while your hands are on it.
+
+To add a binding: press **Record combo**, then press the buttons on the
+controller. Firing is muted while recording, so capturing a combo cannot also
+run whatever that combo is currently bound to. Then type the keys or command,
+and save.
 
 Everything is also available from the CLI:
 
@@ -70,6 +79,11 @@ controller-control bind "L + R" --keys SUPER+RETURN --description Terminal
 controller-control bind START --exec 'omarchy menu'
 controller-control unbind "L + R"
 controller-control test "L + R"    # run a binding's action now
+controller-control disable         # stop everything firing, keeping bindings
+controller-control enable
+controller-control toggle
+controller-control pause           # transient mute, not written to the config
+controller-control pause --resume
 ```
 
 The binary lives inside the plugin folder; add it to your `PATH` with:
@@ -114,6 +128,7 @@ translated into ordinary button tokens for you.
 ```json
 {
   "version": 1,
+  "enabled": true,
   "device": {
     "match": ["8bitdo"],
     "exclusive": false,
@@ -140,6 +155,10 @@ handles it exactly like a real shortcut) or `exec` (a shell command). Options:
 - `repeat` — fire again while held, for volume and brightness.
 - `hold` — only fire after a long press, for anything destructive.
 - `enabled: false` — keep a binding around without it firing.
+
+**`enabled`** is the master switch. Turning it off keeps every binding and
+keeps the pad connected — nothing fires until it goes back on. It is what the
+panel toggle and `controller-control disable` write.
 
 **`device.match`** is a list of case-insensitive substrings matched against
 the device name. It defaults to empty, which matches any gamepad — narrow it
@@ -168,10 +187,19 @@ both fires only `A + B`.
 ## IPC
 
 ```bash
-omarchy-shell controller status    # JSON: running, connected, device, bindings
+omarchy-shell controller status    # JSON: running, connected, enabled, paused, …
 omarchy-shell controller reload    # re-read the config
 omarchy-shell controller restart   # bounce the daemon
+omarchy-shell controller disable   # master switch off
+omarchy-shell controller enable
+omarchy-shell controller toggle
 ```
+
+The daemon publishes its pid to `$XDG_RUNTIME_DIR/controller-control.pid` so
+the CLI can signal a daemon the shell started. It is verified against `/proc`
+before anything is sent to it — a pid file can go stale and the number be
+recycled, and signalling the wrong process is the kind of mistake that stays
+invisible until it does damage.
 
 ## Architecture
 
@@ -200,7 +228,7 @@ only genuinely new nodes are opened.
 python3 -m unittest discover -s tests -v
 ```
 
-33 tests, no dependencies. The end-to-end suite fabricates a synthetic gamepad
+40 tests, no dependencies. The end-to-end suite fabricates a synthetic gamepad
 over uinput and drives the real daemon process against it, so chord
 resolution, hotplug, disconnect, repeat, and hold are all covered without
 touching real hardware.
