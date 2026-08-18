@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Launcher for the controller-control engine.
+#
+# The engine is pure-stdlib Python 3, so there is nothing to install: this
+# just puts the plugin directory on PYTHONPATH and runs the package.
+set -euo pipefail
+
+source="${BASH_SOURCE[0]}"
+while [ -L "$source" ]; do
+  dir="$(cd -P "$(dirname "$source")" && pwd)"
+  source="$(readlink "$source")"
+  [[ $source != /* ]] && source="$dir/$source"
+done
+root="$(cd -P "$(dirname "$source")/.." && pwd)"
+
+python="${CONTROLLER_CONTROL_PYTHON:-}"
+if [ -z "$python" ]; then
+  for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1; then python="$candidate"; break; fi
+  done
+fi
+if [ -z "$python" ]; then
+  echo "controller-control: no python3 interpreter found on PATH" >&2
+  exit 127
+fi
+
+exec env PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}" "$python" -m engine "$@"
