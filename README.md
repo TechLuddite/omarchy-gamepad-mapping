@@ -37,6 +37,12 @@ From a local checkout instead:
 omarchy plugin enable co.klair.controller-control
 ```
 
+`tools/install-plugin.sh` is a developer convenience for working on the plugin
+from a git checkout: it copies the tree into
+`~/.config/omarchy/plugins/co.klair.controller-control`, runs
+`omarchy plugin validate`, and asks the shell to rescan. It is never run by
+`omarchy plugin add`, and installing from the marketplace does not execute it.
+
 There is nothing to compile and nothing to `pip install` — the engine is pure
 Python standard library, which is also why the plugin needs no install hook.
 
