@@ -185,10 +185,19 @@ def find_pads(patterns: list[str], allow_keyboard: bool = True) -> list[DeviceIn
 class Gamepad:
     """An open controller, decoding raw events into button tokens."""
 
-    def __init__(self, info: DeviceInfo, settings: dict, exclusive: bool = False):
+    def __init__(
+        self,
+        info: DeviceInfo,
+        settings: dict,
+        exclusive: bool = False,
+        aliases: dict | None = None,
+    ):
         self.info = info
         self.path = info.path
         self.name = info.name
+        # Applied to every token before anything else sees it, so bindings,
+        # capture and the UI all speak the same names.
+        self.aliases = dict(aliases or {})
         self.trigger_threshold = float(settings.get("trigger_threshold", 0.45))
         self.stick_threshold = float(settings.get("stick_threshold", 0.65))
         self.fd = li.open_event_device(info.path)
@@ -259,6 +268,9 @@ class Gamepad:
 
     # -- reading ------------------------------------------------------------
 
+    def _alias(self, token: str) -> str:
+        return self.aliases.get(token, token)
+
     def read(self) -> list[tuple[str, bool]]:
         """Drain pending events. Returns (button_token, pressed) pairs."""
         events: list[tuple[str, bool]] = []
@@ -287,4 +299,6 @@ class Gamepad:
 
             if len(data) < li.EVENT_SIZE * 64:
                 break
+        if self.aliases:
+            events = [(self._alias(token), pressed) for token, pressed in events]
         return events

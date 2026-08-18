@@ -424,3 +424,86 @@ class TestSignalLatency(unittest.TestCase):
             self.assertLess(elapsed, 1.5, f"took {elapsed:.2f}s to react")
         finally:
             harness.stop()
+
+
+class TestDpadSource(unittest.TestCase):
+    """Pads disagree about where the d-pad lives; both layouts must work."""
+
+    BINDINGS = [
+        {"combo": "DPAD_UP", "keys": "VOLUMEUP", "description": "Vol+"},
+        {"combo": "LSTICK_UP", "keys": "SUPER+1", "description": "Stick up"},
+    ]
+
+    def _config(self, source):
+        return {
+            **CONFIG,
+            "device": {**CONFIG["device"], "dpad_source": source},
+            "bindings": self.BINDINGS,
+        }
+
+    def test_hat_pad_reports_dpad(self):
+        harness = DaemonHarness(self._config("hat"))
+        try:
+            harness.wait_for("started")
+            pad = VirtualPad()
+            harness.wait_for("connected", timeout=8.0)
+            harness.drain()
+            pad.tap("DPAD_UP", hold=0.08)
+            fire = harness.wait_for("fire", timeout=3.0)
+            self.assertEqual(fire["description"], "Vol+")
+            pad.close()
+        finally:
+            harness.stop()
+
+    def test_stick_pad_is_a_stick_by_default(self):
+        """Left stick must not masquerade as a d-pad unless asked."""
+        harness = DaemonHarness(self._config("hat"))
+        try:
+            harness.wait_for("started")
+            pad = VirtualPad(dpad_on_stick=True)
+            harness.wait_for("connected", timeout=8.0)
+            harness.drain()
+            pad.tap("DPAD_UP", hold=0.08)
+            fire = harness.wait_for("fire", timeout=3.0)
+            self.assertEqual(
+                fire["description"], "Stick up", "stick fired a d-pad binding"
+            )
+            pad.close()
+        finally:
+            harness.stop()
+
+    def test_stick_source_renames_stick_to_dpad(self):
+        harness = DaemonHarness(self._config("stick"))
+        try:
+            harness.wait_for("started")
+            pad = VirtualPad(dpad_on_stick=True)
+            harness.wait_for("connected", timeout=8.0)
+            harness.drain()
+            pad.tap("DPAD_UP", hold=0.08)
+            fire = harness.wait_for("fire", timeout=3.0)
+            self.assertEqual(fire["description"], "Vol+")
+            self.assertEqual(fire["combo"], ["DPAD_UP"])
+            pad.close()
+        finally:
+            harness.stop()
+
+
+class TestAliases(unittest.TestCase):
+    def test_arbitrary_token_remapping(self):
+        config = {
+            **CONFIG,
+            "device": {**CONFIG["device"], "aliases": {"Y": "SELECT"}},
+            "bindings": [{"combo": "SELECT", "keys": "SUPER+K", "description": "Keys"}],
+        }
+        harness = DaemonHarness(config)
+        try:
+            harness.wait_for("started")
+            pad = VirtualPad()
+            harness.wait_for("connected", timeout=8.0)
+            harness.drain()
+            pad.tap("Y")
+            fire = harness.wait_for("fire", timeout=3.0)
+            self.assertEqual(fire["combo"], ["SELECT"])
+            pad.close()
+        finally:
+            harness.stop()

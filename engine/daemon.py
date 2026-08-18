@@ -101,7 +101,12 @@ class Daemon:
             if path in self.pads:
                 continue
             try:
-                pad = Gamepad(info, self.config.settings, self.config.exclusive)
+                pad = Gamepad(
+                    info,
+                    self.config.settings,
+                    self.config.exclusive,
+                    self.config.aliases,
+                )
             except OSError as exc:
                 self.emit("error", message=f"cannot open {path}: {exc}")
                 continue

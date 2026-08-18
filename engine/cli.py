@@ -123,7 +123,7 @@ def _open_one_pad(config: Config, *, exclusive: bool = False):
     pads = find_pads(config.device["match"])
     if not pads:
         return None
-    return Gamepad(pads[0], config.settings, exclusive)
+    return Gamepad(pads[0], config.settings, exclusive, config.aliases)
 
 
 def _wait_for_pad(config: Config, timeout: float, quiet: bool = False):
@@ -441,6 +441,21 @@ def cmd_doctor(args) -> int:
         bool(pads),
         ", ".join(p.name for p in pads) if pads else "turn the pad on / pair it",
     )
+
+    # Not a pass/fail: a pad's capabilities do not reveal where it really
+    # sends the d-pad, so this points at the way to find out rather than
+    # pretending to detect it.
+    source = config.dpad_source
+    print(
+        f" [{dim('info')}] d-pad source is {bold(source)}"
+        + dim(
+            "  — run 'controller-control monitor' and press the d-pad; if it "
+            'reports LSTICK_*, set device.dpad_source to "stick"'
+        )
+    )
+    if config.aliases:
+        remaps = ", ".join(f"{k}->{v}" for k, v in sorted(config.aliases.items()))
+        print(f" [{dim('info')}] aliases: {dim(remaps)}")
 
     print()
     if problems:

@@ -7,7 +7,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from .buttons import format_combo, parse_combo
+from .buttons import format_combo, normalize_button, parse_combo
 
 CONFIG_VERSION = 1
 
@@ -45,6 +45,12 @@ DEFAULT_SETTINGS: dict = {
     "rescan_interval_s": 2.0,
 }
 
+# Where a pad reports its d-pad. Most controllers use the hat axis, which is
+# what "hat" means and why it is the default. Some pads -- notably 8BitDo in
+# D-input mode -- send the d-pad on the left stick axes instead; "stick" makes
+# those arrive as DPAD_* so the same bindings work.
+DPAD_SOURCES = ("hat", "stick")
+
 DEFAULT_DEVICE: dict = {
     # Name substrings to match, case-insensitive. Empty list = any gamepad,
     # which is the default so the plugin works on first run whatever you own.
@@ -57,16 +63,25 @@ DEFAULT_DEVICE: dict = {
     "match": [],
     # Take the pad away from every other application (games, Steam, browsers).
     "exclusive": False,
-    # "nintendo" makes displayed labels match the plastic on 8BitDo pads.
-    "layout": "nintendo",
+    # Face-button labelling. "auto" uses the evdev/Xbox convention, which is
+    # right for most pads. "nintendo" swaps the face labels for pads whose
+    # plastic follows the Nintendo layout *and* whose firmware reports
+    # positionally rather than by label.
+    "layout": "auto",
+    # See DPAD_SOURCES above.
+    "dpad_source": "hat",
+    # Free-form token remapping, applied to everything the pad reports:
+    #   {"L2": "L", "THUMBL": "SELECT"}
+    "aliases": {},
 }
 
 # Shipped starter bindings, all built on stock Omarchy keybindings.
 #
-# The d-pad is bound twice on purpose. Most pads report it as a hat axis
-# (DPAD_*), but 8BitDo pads in D-input mode send it on the left-stick axes
-# instead (LSTICK_*). Binding both means the defaults work on either without
-# the user having to know which kind they own.
+# The d-pad is bound as DPAD_*, which is where nearly every controller reports
+# it. Nothing here binds an analog stick: on a pad that has one, nudging it to
+# change the volume or move window focus would be a nasty surprise. Pads that
+# report their d-pad on the stick instead should set device.dpad_source to
+# "stick", which renames those events to DPAD_* for free.
 DEFAULT_BINDINGS: list[dict] = [
     {"combo": "A", "keys": "SUPER+RETURN", "description": "Terminal"},
     {"combo": "B", "keys": "SUPER+F", "description": "Full screen"},
@@ -81,28 +96,6 @@ DEFAULT_BINDINGS: list[dict] = [
     {"combo": "DPAD_UP", "keys": "VOLUMEUP", "repeat": True, "description": "Volume up"},
     {
         "combo": "DPAD_DOWN",
-        "keys": "VOLUMEDOWN",
-        "repeat": True,
-        "description": "Volume down",
-    },
-    {
-        "combo": "LSTICK_LEFT",
-        "keys": "SUPER+LEFT",
-        "description": "Focus left window",
-    },
-    {
-        "combo": "LSTICK_RIGHT",
-        "keys": "SUPER+RIGHT",
-        "description": "Focus right window",
-    },
-    {
-        "combo": "LSTICK_UP",
-        "keys": "VOLUMEUP",
-        "repeat": True,
-        "description": "Volume up",
-    },
-    {
-        "combo": "LSTICK_DOWN",
         "keys": "VOLUMEDOWN",
         "repeat": True,
         "description": "Volume down",
@@ -218,6 +211,25 @@ class Config:
             raise ConfigError("device.match must be a string or list of strings")
         self.device["match"] = [m.lower() for m in match]
 
+        source = self.device.get("dpad_source", "hat")
+        if source not in DPAD_SOURCES:
+            raise ConfigError(
+                f"device.dpad_source must be one of {', '.join(DPAD_SOURCES)}"
+            )
+
+        raw_aliases = self.device.get("aliases") or {}
+        if not isinstance(raw_aliases, dict):
+            raise ConfigError("device.aliases must be an object")
+        aliases = {
+            normalize_button(k): normalize_button(v) for k, v in raw_aliases.items()
+        }
+        if source == "stick":
+            # A pad that puts the d-pad on the stick has no separate stick to
+            # lose, so this is a straight rename rather than a trade-off.
+            for direction in ("UP", "DOWN", "LEFT", "RIGHT"):
+                aliases.setdefault(f"LSTICK_{direction}", f"DPAD_{direction}")
+        self.device["aliases"] = aliases
+
         raw_bindings = raw.get("bindings")
         if raw_bindings is None:
             raw_bindings = DEFAULT_BINDINGS
@@ -241,6 +253,14 @@ class Config:
     @property
     def layout(self) -> str:
         return str(self.device.get("layout", "auto"))
+
+    @property
+    def aliases(self) -> dict:
+        return self.device.get("aliases") or {}
+
+    @property
+    def dpad_source(self) -> str:
+        return str(self.device.get("dpad_source", "hat"))
 
     @property
     def exclusive(self) -> bool:
