@@ -12,6 +12,12 @@ up in `/dev/input`, this can bind it. Nothing is hardcoded to a particular
 model: the defaults match any gamepad, and the button names come from the
 kernel rather than from a per-device database.
 
+![The bindings panel, showing L and R held on the controller](docs/screenshot.png)
+
+The panel lists what every combo does and what it sends. The pills beside the
+switch are the buttons being held right now, so the pad answers while your
+hands are on it.
+
 ## Why it exists
 
 Omarchy already has 200+ keybindings. This does not try to replace them: a
@@ -36,10 +42,16 @@ Python standard library, which is also why the plugin needs no install hook.
 
 ### Requirements
 
-- Your user must be in the `input` group (stock on Omarchy) to read
-  `/dev/input`. Check with `id`.
-- `/dev/uinput` must be writable for `keys` actions. `controller-control
-  doctor` verifies both.
+**External dependencies: none.** The engine is pure Python 3 standard library
+— no pip packages, no compilation, no install hook. It uses `python3`, which
+Omarchy already ships.
+
+Two permissions, both stock on an Omarchy install:
+
+- Your user must be in the `input` group to read `/dev/input`. Check with `id`.
+- `/dev/uinput` must be writable, for `keys` actions.
+
+`controller-control doctor` verifies both and tells you what is missing.
 
 ## Pairing a controller
 
@@ -119,6 +131,40 @@ The binary lives inside the plugin folder; add it to your `PATH` with:
 ```bash
 export PATH="$HOME/.config/omarchy/plugins/co.klair.controller-control/bin:$PATH"
 ```
+
+## Uninstall
+
+```bash
+omarchy plugin disable co.klair.controller-control
+omarchy plugin remove co.klair.controller-control
+```
+
+Disabling stops the daemon and takes the widget off the bar; removing deletes
+the plugin folder. Neither touches your bindings, which live outside the
+plugin at `~/.config/controller-control/`. Delete that directory too if you
+want it gone completely:
+
+```bash
+rm -rf ~/.config/controller-control
+```
+
+Nothing else is left behind: no system files, no services, no udev rules, and
+the only runtime artefact is a pid file under `$XDG_RUNTIME_DIR` that goes
+when the daemon stops.
+
+### What it writes
+
+Only its own files, and only when you ask:
+
+| Path | When |
+|---|---|
+| `~/.config/controller-control/config.json` | when you add, remove or toggle a binding |
+| `$XDG_RUNTIME_DIR/controller-control.pid` | while the daemon is running |
+
+It does not modify your Hyprland config, your keybindings, or any other
+application's settings. Adding the widget to the bar is done by
+`omarchy plugin enable`, which is Omarchy's own command and only runs when you
+invoke it.
 
 ## Button names
 
