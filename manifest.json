@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "co.klair.controller-control",
-  "name": "Controller Control",
-  "version": "0.3.0",
-  "author": "Parminder Klair",
+  "name": "Gamepad Mapping",
+  "version": "0.4.0",
+  "author": "TechLuddite, based on Parminder Klair\u2019s Controller Control",
   "license": "MIT",
-  "description": "Map any game controller's button combos to desktop shortcuts and commands. Works with Xbox, DualSense, 8BitDo and generic pads.",
+  "description": "Map gamepad buttons to Omarchy shortcuts with a searchable touch editor.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,7 +16,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Controller",
+    "displayName": "Gamepad Mapping",
     "description": "Shows controller connection state and edits button bindings.",
     "category": "Input",
     "allowMultiple": false,

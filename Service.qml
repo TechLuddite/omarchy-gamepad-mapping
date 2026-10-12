@@ -18,6 +18,15 @@ Item {
   readonly property string pluginDir: Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")
   readonly property string cli: pluginDir + "bin/controller-control"
 
+  // Handheld launchers need an editor independent of a desktop bar widget.
+  Loader {
+    id: editorLoader
+    source: Qt.resolvedUrl("Panel.qml")
+    active: true
+    visible: false
+    onLoaded: item.service = root
+  }
+
   // ---- live state, read by BarWidget.qml and Panel.qml -------------------
 
   property bool running: false
@@ -262,6 +271,16 @@ Item {
         held: root.heldButtons,
         error: root.lastError
       })
+    }
+
+    function open(): string {
+      if (editorLoader.item) editorLoader.item.open()
+      return "ok"
+    }
+
+    function close(): string {
+      if (editorLoader.item) editorLoader.item.close()
+      return "ok"
     }
 
     function reload(): string {

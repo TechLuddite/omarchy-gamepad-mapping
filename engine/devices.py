@@ -164,10 +164,12 @@ class DeviceScanner:
         present as an ordinary HID keyboard rather than a gamepad.
         """
         devices = []
-        for info in self.scan():
+        # Explicit names can select a handheld's volume/paddle input node,
+        # even if it advertises only media keys rather than letter keys.
+        for info in self.scan(include_all=bool(patterns)):
             if not info.matches(patterns):
                 continue
-            if info.is_gamepad or (allow_keyboard and patterns and info.is_keyboard):
+            if info.is_gamepad or (allow_keyboard and patterns and info.key_codes):
                 devices.append(info)
         return devices
 

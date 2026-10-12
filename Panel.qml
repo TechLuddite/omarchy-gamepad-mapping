@@ -1,4 +1,4 @@
-import QtQuick
+import QtQuick 6.11
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -48,17 +48,26 @@ Panel {
   // ---- draft binding being composed -------------------------------------
 
   property var draftCombo: []
-  property bool draftIsCommand: false
-  readonly property bool draftReady: draftCombo.length > 0 && actionField.text.trim() !== ""
+  property var shortcuts: []
+  property string selectedShortcut: ""
+  readonly property var draftAction: {
+    for (var i = 0; i < shortcuts.length; i++)
+      if (shortcuts[i].value === selectedShortcut) return shortcuts[i]
+    return null
+  }
+  readonly property bool draftReady: draftCombo.length > 0 && draftAction !== null
 
   function open() {
     refresh()
+    editorWindow.visible = false
     root.controller.show()
+    editorWindow.visible = true
   }
 
   function close() {
     if (service) service.cancelCapture()
     root.controller.hide()
+    editorWindow.visible = false
   }
 
   function toggle() {
@@ -67,6 +76,7 @@ Panel {
 
   function refresh() {
     if (!listProc.running) listProc.running = true
+    if (!shortcutProc.running) shortcutProc.running = true
   }
 
   function comboText(combo) {
@@ -83,11 +93,11 @@ Panel {
   function saveDraft() {
     if (!root.draftReady) return
     var args = [root.cli, "bind", comboText(root.draftCombo)]
-    args.push(root.draftIsCommand ? "--exec" : "--keys")
-    args.push(actionField.text.trim())
-    if (descriptionField.text.trim() !== "") {
+    args.push(root.draftAction.exec ? "--exec" : "--keys")
+    args.push(root.draftAction.exec || root.draftAction.keys)
+    if (root.draftAction.description) {
       args.push("--description")
-      args.push(descriptionField.text.trim())
+      args.push(root.draftAction.description)
     }
     mutateProc.command = args
     mutateProc.running = true
@@ -100,8 +110,7 @@ Panel {
 
   function clearDraft() {
     root.draftCombo = []
-    actionField.text = ""
-    descriptionField.text = ""
+    root.selectedShortcut = ""
   }
 
   Connections {
@@ -113,6 +122,22 @@ Panel {
   }
 
   // ---- CLI calls ---------------------------------------------------------
+
+  Process {
+    id: shortcutProc
+    command: [root.pluginDir + "bin/omarchy-shortcuts", "list"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try { root.shortcuts = JSON.parse(text) }
+        catch (e) { root.statusMessage = "Could not read Omarchy shortcuts. Tap Reload to retry." }
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim()) root.statusMessage = text.trim()
+    }
+  }
 
   Process {
     id: listProc
@@ -151,20 +176,25 @@ Panel {
 
   Process { id: openConfigProc }
 
-  KeyboardPanel {
-    id: panel
-    anchorItem: root.anchorItem
-    owner: root.barIdentity
-    bar: root.bar
-    open: root.opened
-    focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(470))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
+  // An ordinary window allows the touchscreen keyboard to sit above the
+  // editor. A full-screen Overlay popup otherwise catches keyboard taps.
+  FloatingWindow {
+    id: editorWindow
+    title: "Gamepad Mapping"
+    visible: false
+    color: Color.popups.background
+    implicitWidth: 820
+    implicitHeight: 640
+    onVisibleChanged: if (!visible && root.opened) root.close()
 
-    PanelKeyCatcher {
-      id: keyCatcher
+    Flickable {
+      id: editorScroll
       anchors.fill: parent
-      onCloseRequested: root.close()
+      anchors.margins: Style.space(18)
+      clip: true
+      contentWidth: width
+      contentHeight: content.implicitHeight
+      boundsBehavior: Flickable.StopAtBounds
 
       ColumnLayout {
         id: content
@@ -375,33 +405,25 @@ Panel {
             onClicked: root.beginCapture()
           }
 
-          Button {
-            text: root.draftIsCommand ? "Command" : "Keys"
-            tooltipText: root.draftIsCommand
-              ? "Runs a shell command"
-              : "Types a keyboard shortcut, e.g. SUPER+RETURN"
-            bordered: true
-            foreground: root.barForeground
-            onClicked: root.draftIsCommand = !root.draftIsCommand
+        }
+
+        ShortcutDropdown {
+          id: shortcutPicker
+          Layout.fillWidth: true
+          foreground: root.barForeground
+          label: "2. Choose an Omarchy shortcut"
+          placeholderText: "Search actions or keys…"
+          emptyText: "No matching shortcuts"
+          rowHeight: Style.space(44)
+          popupRowHeight: Style.space(44)
+          value: root.selectedShortcut
+          options: [{ value: "", label: root.shortcuts.length > 0 ? "Select an action…" : "Loading Omarchy shortcuts…" }].concat(root.shortcuts)
+          onChanged: function(value) {
+            root.selectedShortcut = value
+            // Restore the binding after Dropdown writes its selected value,
+            // so Save/Clear also reset the displayed selection.
+            shortcutPicker.value = Qt.binding(function() { return root.selectedShortcut })
           }
-        }
-
-        TextField {
-          id: actionField
-          Layout.fillWidth: true
-          foreground: root.barForeground
-          placeholderText: root.draftIsCommand
-            ? "2. Command to run, e.g. omarchy capture screenshot"
-            : "2. Keys to send, e.g. SUPER+RETURN"
-          onAccepted: root.saveDraft()
-        }
-
-        TextField {
-          id: descriptionField
-          Layout.fillWidth: true
-          foreground: root.barForeground
-          placeholderText: "Description (optional)"
-          onAccepted: root.saveDraft()
         }
 
         RowLayout {

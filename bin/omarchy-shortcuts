@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+plugin_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export PYTHONPATH="$plugin_dir${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m engine.shortcuts "$@"

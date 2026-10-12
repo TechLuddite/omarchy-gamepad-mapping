@@ -33,6 +33,8 @@ GAMEPAD_BUTTONS: dict[str, int] = {
     "SELECT": BTN_CODES["SELECT"],
     "START": BTN_CODES["START"],
     "MODE": BTN_CODES["MODE"],
+    # Android handhelds have a dedicated Back key in addition to Select.
+    "BACK_BUTTON": BTN_CODES["BACK"],
     "THUMBL": BTN_CODES["THUMBL"],
     "THUMBR": BTN_CODES["THUMBR"],
     # Some drivers report the d-pad as real buttons instead of a hat axis.
