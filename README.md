@@ -6,8 +6,13 @@ The shortcut picker uses **David Heinemeier Hansson’s Omarchy UI**. Thanks als
 **Simon Schubert’s mobile Omarchy work** for the handheld environment this is
 being developed on. See [CREDITS.md](CREDITS.md) for provenance and licenses.
 
-Record a button or combination, choose an Omarchy action from a searchable
-menu, and save. You can do the whole assignment by touch. The action’s name
+**TechLuddite's [Luddite Gestures](https://github.com/TechLuddite/luddite-gestures)**
+supplies the inspected ownership/conflict design for showing existing OS mappings;
+the evdev/keybind reader is original and does not copy gesture source.
+
+Record a button or combination, choose an Omarchy shortcut or a standard
+keyboard key from separate searchable full-window pickers, and save. Choosing
+one clears the other. You can do the whole assignment by touch. The action’s name
 fills automatically. Search matches names and keys, ignoring spaces and plus
 signs; opening the menu does not summon the keyboard until you tap its search
 field. Existing shortcuts are read from the running Omarchy configuration.
@@ -18,6 +23,11 @@ continues to reach games by default. Single buttons, chords, analog triggers,
 stick directions, hold and repeat actions are supported by the inherited engine.
 Hold/repeat and custom commands are available through its CLI and JSON config.
 The Odin’s dedicated Back button is separate from Select.
+Existing compositor mappings and native pointer Back navigation are shown
+read-only with conflict warnings. An optional external runtime mode lease can
+suppress OS actions when games own the controller; missing/stale leases fail
+closed. Without that opt-in setting, generic behavior is unchanged. The Portal's
+five-second A + R1 toggle and libinput device policy belong to its native port.
 
 ## Install
 
@@ -56,8 +66,9 @@ Development device: AYN Odin2 Portal, native ARM64 Linux, Omarchy 4.0.3 with
 omarchy-mobile, Hyprland 0.56.2 and Qt 6.12. The initial menu exports all 223
 configured shortcuts; installing Voxtype adds Omarchy’s dictation bindings.
 
-52 tests pass on the ARM device: the upstream 44, three Portal device/button
-checks, and five shortcut-catalog checks. The integration tests use a synthetic
+58 tests pass on the ARM device: the upstream 44, three Portal device/button
+checks, five shortcut-catalog checks and six key-catalog/mode/conflict checks.
+Both full-window pickers are user-accepted on the Portal. The integration tests use a synthetic
 pad and run actions in dry-run mode. Physical rear paddles and full game
 compatibility remain separate hardware checks.
 

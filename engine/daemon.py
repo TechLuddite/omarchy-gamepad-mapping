@@ -19,6 +19,8 @@ from .buttons import format_combo
 from .combos import ComboEngine
 from .config import PID_PATH, Config, ConfigError, load
 from .devices import DeviceGone, DeviceScanner, Gamepad
+from .mode_gate import allowed as mode_allowed
+from .mode_gate import snapshot as mode_snapshot
 
 
 class Daemon:
@@ -55,10 +57,13 @@ class Daemon:
         self._wake_w = -1
         self._reload_requested = False
         self._last_scan = 0.0
+        self._mode_allowed = False
+        self._mode_release = False
+        self._mode_state = None
 
     @property
     def firing(self) -> bool:
-        return self.config.enabled and not self.paused
+        return self.config.enabled and not self.paused and mode_allowed(self.config.device.get("mode_gate"))
 
     # -- output -------------------------------------------------------------
 
@@ -82,6 +87,8 @@ class Daemon:
             exclusive=self.config.exclusive,
             enabled=self.config.enabled,
             paused=self.paused,
+            os_mode=mode_snapshot(self.config.device.get("mode_gate")).get("os_mode") is True,
+            mode_suppressed=not mode_allowed(self.config.device.get("mode_gate")),
         )
 
     # -- device management --------------------------------------------------
@@ -188,7 +195,7 @@ class Daemon:
                 combo=list(binding.combo),
                 label=format_combo(binding.combo, self.config.layout),
                 description=binding.description,
-                reason="paused" if self.paused else "disabled",
+                reason="paused" if self.paused else "disabled" if not self.config.enabled else "mode",
             )
             return
         ok, detail = self.runner.run(binding)
@@ -233,7 +240,12 @@ class Daemon:
                     held=sorted(self.engine.held),
                 )
             for activation in activations:
+                if self._mode_release:
+                    continue
                 self._fire(activation)
+            if self._mode_release and not self.engine.held:
+                self.engine.reset()
+                self._mode_release = False
 
     def _write_pid_file(self) -> None:
         try:
@@ -282,11 +294,21 @@ class Daemon:
                 self.emit_state()
 
             now = time.monotonic()
+            permitted = mode_allowed(self.config.device.get("mode_gate"))
+            mode_state = (mode_snapshot(self.config.device.get("mode_gate")).get("os_mode") is True, permitted)
+            if mode_state != self._mode_state:
+                self._mode_release = bool(self.engine.held)
+                self.engine.reset()
+                self._mode_allowed = permitted
+                self._mode_state = mode_state
+                self.emit_state()
             deadline = self.engine.next_deadline()
             timeout = rescan_interval - (now - self._last_scan)
             if deadline is not None:
                 timeout = min(timeout, max(0.0, deadline - now))
             timeout = max(0.0, min(timeout, rescan_interval))
+            if self.config.device.get("mode_gate"):
+                timeout = min(timeout, 0.05)
 
             fds = [pad.fileno() for pad in self.pads.values()]
             if self._wake_r >= 0:
@@ -309,7 +331,8 @@ class Daemon:
                     self._pump(pad, now)
 
             for activation in self.engine.tick(time.monotonic()):
-                self._fire(activation)
+                if not self._mode_release:
+                    self._fire(activation)
 
             if time.monotonic() - self._last_scan >= rescan_interval:
                 self.rescan()

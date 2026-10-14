@@ -49,13 +49,31 @@ Panel {
 
   property var draftCombo: []
   property var shortcuts: []
+  property var keyboardKeys: []
+  property var externalMappings: []
+  property bool mappingsChecked: false
+  property string selectedKey: ""
   property string selectedShortcut: ""
   readonly property var draftAction: {
+    for (var k = 0; k < keyboardKeys.length; k++)
+      if (keyboardKeys[k].value === selectedKey) return keyboardKeys[k]
     for (var i = 0; i < shortcuts.length; i++)
       if (shortcuts[i].value === selectedShortcut) return shortcuts[i]
     return null
   }
   readonly property bool draftReady: draftCombo.length > 0 && draftAction !== null
+
+  function mappingWarning(combo) {
+    var warnings = []
+    for (var i = 0; i < externalMappings.length; i++) {
+      var m = externalMappings[i]
+      if (combo.indexOf(m.token) !== -1)
+        warnings.push(m.token + ": " + m.description + (m.modifiers ? " (with keyboard modifiers)" : ""))
+    }
+    if (combo.indexOf("A") !== -1 && combo.indexOf("R") !== -1)
+      warnings.push("A + R1 is reserved for the five-second OS / Game Mode switch.")
+    return warnings.join("\n")
+  }
 
   function open() {
     refresh()
@@ -77,6 +95,8 @@ Panel {
   function refresh() {
     if (!listProc.running) listProc.running = true
     if (!shortcutProc.running) shortcutProc.running = true
+    if (!keyboardProc.running) keyboardProc.running = true
+    if (!mappingsProc.running) mappingsProc.running = true
   }
 
   function comboText(combo) {
@@ -111,6 +131,7 @@ Panel {
   function clearDraft() {
     root.draftCombo = []
     root.selectedShortcut = ""
+    root.selectedKey = ""
   }
 
   Connections {
@@ -122,6 +143,33 @@ Panel {
   }
 
   // ---- CLI calls ---------------------------------------------------------
+
+  Process {
+    id: mappingsProc
+    command: [root.pluginDir + "bin/existing-mappings"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var result = JSON.parse(text)
+          root.externalMappings = result.bindings
+          root.mappingsChecked = result.available === true
+        } catch (e) { root.mappingsChecked = false }
+      }
+    }
+  }
+
+  Process {
+    id: keyboardProc
+    command: [root.pluginDir + "bin/keyboard-keys"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try { root.keyboardKeys = JSON.parse(text) }
+        catch (e) { root.statusMessage = "Could not read keyboard keys. Tap Reload to retry." }
+      }
+    }
+  }
 
   Process {
     id: shortcutProc
@@ -278,7 +326,7 @@ Panel {
         // ---- existing bindings -------------------------------------------
 
         PanelSectionHeader {
-          text: root.enabled
+          text: root.service && !root.service.osMode ? "GAME MODE · OS BINDINGS SUPPRESSED" : root.service && root.service.modeSuppressed ? "OS MODE · WAITING OR POINTER CONTROLS ACTIVE" : root.enabled
             ? root.bindings.length + " BINDINGS"
             : root.bindings.length + " BINDINGS · DISABLED"
           foreground: root.enabled ? root.barForeground : Color.urgent
@@ -350,6 +398,16 @@ Panel {
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                   }
+
+                  Text {
+                    Layout.fillWidth: true
+                    text: root.mappingWarning(bindingRow.modelData.combo.split(/\s*\+\s*/))
+                    visible: text !== ""
+                    color: Color.urgent
+                    wrapMode: Text.WordWrap
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
                 }
 
                 PanelActionButton {
@@ -371,6 +429,31 @@ Panel {
         }
 
         // ---- new binding --------------------------------------------------
+
+        PanelSectionHeader {
+          text: "EXISTING OS MAPPINGS · READ ONLY"
+          foreground: root.barForeground
+        }
+        Text {
+          Layout.fillWidth: true
+          text: root.mappingsChecked ? "Mappings outside this plugin are shown below. Native pointer navigation also depends on per-device settings; volume and power retain their OS bindings." : "Could not check existing OS mappings. Tap Reload to retry."
+          color: root.barForeground
+          wrapMode: Text.WordWrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+        Repeater {
+          model: root.externalMappings
+          Text {
+            required property var modelData
+            Layout.fillWidth: true
+            text: modelData.token + " · " + modelData.description + (modelData.modifiers ? " · keyboard modifiers " + modelData.modifiers : "")
+            color: root.barForeground
+            wrapMode: Text.WordWrap
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+        }
 
         PanelSectionHeader {
           text: "NEW BINDING"
@@ -420,10 +503,38 @@ Panel {
           options: [{ value: "", label: root.shortcuts.length > 0 ? "Select an action…" : "Loading Omarchy shortcuts…" }].concat(root.shortcuts)
           onChanged: function(value) {
             root.selectedShortcut = value
+            root.selectedKey = ""
             // Restore the binding after Dropdown writes its selected value,
             // so Save/Clear also reset the displayed selection.
             shortcutPicker.value = Qt.binding(function() { return root.selectedShortcut })
           }
+        }
+
+        ShortcutDropdown {
+          id: keyboardPicker
+          Layout.fillWidth: true
+          foreground: root.barForeground
+          label: "Or choose a standard keyboard key"
+          placeholderText: "Search keyboard keys…"
+          rowHeight: Style.space(44)
+          popupRowHeight: Style.space(44)
+          value: root.selectedKey
+          options: [{ value: "", label: "Select a keyboard key…" }].concat(root.keyboardKeys)
+          onChanged: function(value) {
+            root.selectedKey = value
+            root.selectedShortcut = ""
+            keyboardPicker.value = Qt.binding(function() { return root.selectedKey })
+          }
+        }
+
+        Text {
+          Layout.fillWidth: true
+          text: root.mappingWarning(root.draftCombo)
+          visible: text !== ""
+          color: Color.urgent
+          wrapMode: Text.WordWrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
         }
 
         RowLayout {

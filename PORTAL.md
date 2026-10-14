@@ -25,8 +25,34 @@ available to games by default.
 
 Hold and repeat options are also available through the CLI (`bind --hold` or
 `bind --repeat`) and the JSON configuration. These options are not exposed in
-the current form. The native device passes 44 upstream tests, two Portal
-device-selection tests and five shortcut-catalog tests. Physical rear-paddle
+the current form. The native device passes 58 tests: 44 upstream, three Portal
+device/button checks, five shortcut-catalog checks and six catalog/mode/conflict checks. Physical rear-paddle
 input is still unverified; the
 current Portal DTB has no paddle key declarations. The original Odin 2's paddle
 GPIO assignments must not be applied to the Portal without evidence.
+
+## Later bug-session changes
+
+The editor now offers a second searchable picker for 119 standard keyboard keys
+alongside the live Omarchy shortcut picker. Selecting either clears the other;
+Clear resets both. They save through the existing `keys`/`exec` configuration.
+Both pickers fill the editor window with a Back button, search and a scrolling
+list, so bottom-positioned triggers cannot clip their results. The Portal user
+confirmed both revised pickers. Restart the shell if rescanning retains old QML.
+
+Existing volume/power compositor bindings and native mouse Back navigation are
+shown read-only, with warnings next to intersecting existing and draft mappings.
+This follows TechLuddite's MIT Luddite Gestures ownership/conflict design; the
+evdev/Hyprland reader is original, not copied gesture code. Reading failure is
+shown explicitly rather than claiming that no external mappings exist.
+
+The Portal integration supplies an optional `device.mode_gate` runtime lease.
+Missing/stale leases suppress actions; generic installs without that option
+retain their previous behavior. The Portal broker defaults to Game Mode and
+uses a five-second A + R1 hold to switch. OS Mode activates these assignments;
+its optional exclusive pointer scope temporarily owns the controller instead.
+The physical pad is disabled only as a Hyprland mouse so native BTN_BACK cannot
+also navigate apps behind the mapper. Separate volume/power devices retain their
+OS bindings. Games retain evdev input; physical game acceptance remains separate.
+The new split OSK is disabled at the user's request; stock moarchy-keyboard stays
+active. See the parent project's docs/bugs-controls.md for tests and rollback.

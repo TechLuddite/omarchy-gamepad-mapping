@@ -19,6 +19,10 @@ copying or redistributing the code, and add credits as further work is reused.
   They remain separate dependencies, not bundled copies in this repository.
 - **Linux input, Qt and Quickshell contributors**: the kernel input interfaces,
   rendering toolkit and shell runtime this plugin uses.
+- **TechLuddite**, [Luddite Gestures](https://github.com/TechLuddite/luddite-gestures),
+  inspected at `28f4822b42cd423e2ac4c1041ec1f2b25293f863` (MIT): read-before-write
+  and external ownership/conflict design. The mapper's evdev/compositor reader is
+  original; no gesture source is copied.
 
 **TechLuddite’s adaptation** adds the touch workflow, searchable live shortcut
 catalog, automatic descriptions, dedicated Odin Back-button token, compatibility

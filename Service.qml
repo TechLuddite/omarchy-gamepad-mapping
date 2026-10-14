@@ -33,6 +33,8 @@ Item {
   property bool connected: false
   // Master switch, persisted in the config file.
   property bool enabled: true
+  property bool osMode: true
+  property bool modeSuppressed: false
   // Transient mute, held only while the panel is recording a combo.
   property bool paused: false
   property string deviceName: ""
@@ -164,6 +166,8 @@ Item {
       root.exclusive = event.exclusive === true
       if (event.enabled !== undefined) root.enabled = event.enabled === true
       if (event.paused !== undefined) root.paused = event.paused === true
+      if (event.os_mode !== undefined) root.osMode = event.os_mode === true
+      if (event.mode_suppressed !== undefined) root.modeSuppressed = event.mode_suppressed === true
       if (Array.isArray(event.devices) && event.devices.length > 0) {
         root.deviceName = String(event.devices[0].name || "")
         root.devicePath = String(event.devices[0].path || "")
@@ -265,6 +269,8 @@ Item {
         connected: root.connected,
         enabled: root.enabled,
         paused: root.paused,
+        os_mode: root.osMode,
+        mode_suppressed: root.modeSuppressed,
         device: root.deviceName,
         bindings: root.bindingCount,
         exclusive: root.exclusive,

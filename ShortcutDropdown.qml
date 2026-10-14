@@ -1,6 +1,6 @@
 // Based on Omarchy Ui/SearchableDropdown.qml.
 // Copyright (c) David Heinemeier Hansson. MIT; see OMARCHY-LICENSE.
-// Touch selection, optional keyboard focus, and window-height limits for Portal.
+// Touch selection, optional keyboard focus, and full-window pickers for Portal.
 import QtQuick 6.11
 import QtQuick.Window
 import QtQuick.Controls as QQC
@@ -174,13 +174,15 @@ Item {
 
       QQC.Popup {
         id: popup
-        x: 0
-        y: trigger.height + Style.spacing.xxs
-        width: trigger.width
-        implicitHeight: Math.min(Math.max(root.popupMinHeight,
-                                 Math.min(resultList.contentHeight + Style.space(58),
-                                          root.popupRowHeight * 6 + 5 * Style.spacing.labelGap + Style.space(58))),
-                                 Math.max(root.popupRowHeight + Style.space(58), root.Window.height - Style.space(24)))
+        // Use window coordinates, independent of the trigger's position in
+        // the scrolling editor. Both catalogs get all available vertical room.
+        parent: QQC.Overlay.overlay
+        x: Style.spacing.md
+        y: Style.spacing.md
+        width: Math.max(1, parent.width - 2 * Style.spacing.md)
+        height: Math.max(1, parent.height - 2 * Style.spacing.md)
+        modal: true
+        closePolicy: QQC.Popup.CloseOnEscape
         padding: Style.spacing.hairline
         leftPadding: Border.left(root.popupBorderSpec) + Style.spacing.hairline
         rightPadding: Border.right(root.popupBorderSpec) + Style.spacing.hairline
@@ -205,6 +207,36 @@ Item {
 
         contentItem: Column {
           spacing: 0
+
+          Item {
+            id: navigationHeader
+            width: parent.width
+            height: root.popupRowHeight + Style.spacing.md
+
+            QQC.Button {
+              id: backButton
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.spacing.md
+              height: root.popupRowHeight
+              text: "Back"
+              onClicked: popup.close()
+            }
+
+            Text {
+              anchors.left: backButton.right
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.margins: Style.spacing.md
+              textFormat: Text.PlainText
+              text: root.label
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: true
+              elide: Text.ElideRight
+            }
+          }
 
           Item {
             id: searchHeader
@@ -254,7 +286,7 @@ Item {
 
           Item {
             width: parent.width
-            height: popup.height - searchHeader.height - Style.spacing.xxs - 1
+            height: Math.max(0, popup.availableHeight - navigationHeader.height - searchHeader.height - 1)
 
             Text {
               textFormat: Text.PlainText
@@ -273,6 +305,7 @@ Item {
               clip: true
               boundsBehavior: Flickable.StopAtBounds
               model: root.filtered
+              QQC.ScrollBar.vertical: QQC.ScrollBar { }
               currentIndex: -1
               keyNavigationEnabled: false
 
