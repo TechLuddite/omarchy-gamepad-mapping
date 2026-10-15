@@ -34,6 +34,7 @@ Item {
   // Master switch, persisted in the config file.
   property bool enabled: true
   property bool osMode: true
+  property string inputMode: "os"
   property bool modeSuppressed: false
   // Transient mute, held only while the panel is recording a combo.
   property bool paused: false
@@ -167,6 +168,7 @@ Item {
       if (event.enabled !== undefined) root.enabled = event.enabled === true
       if (event.paused !== undefined) root.paused = event.paused === true
       if (event.os_mode !== undefined) root.osMode = event.os_mode === true
+      if (event.input_mode !== undefined) root.inputMode = String(event.input_mode)
       if (event.mode_suppressed !== undefined) root.modeSuppressed = event.mode_suppressed === true
       if (Array.isArray(event.devices) && event.devices.length > 0) {
         root.deviceName = String(event.devices[0].name || "")
@@ -270,6 +272,7 @@ Item {
         enabled: root.enabled,
         paused: root.paused,
         os_mode: root.osMode,
+        input_mode: root.inputMode,
         mode_suppressed: root.modeSuppressed,
         device: root.deviceName,
         bindings: root.bindingCount,

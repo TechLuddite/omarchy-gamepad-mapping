@@ -26,10 +26,9 @@ available to games by default.
 Hold and repeat options are also available through the CLI (`bind --hold` or
 `bind --repeat`) and the JSON configuration. These options are not exposed in
 the current form. The native device passes 58 tests: 44 upstream, three Portal
-device/button checks, five shortcut-catalog checks and six catalog/mode/conflict checks. Physical rear-paddle
-input is still unverified; the
-current Portal DTB has no paddle key declarations. The original Odin 2's paddle
-GPIO assignments must not be applied to the Portal without evidence.
+device/button checks, five shortcut-catalog checks and six catalog/mode/conflict checks. The October 14 parent-port check physically correlates left/right paddles with
+GPIO57/58 on this Portal. A separate userspace bridge exposes their input;
+the mapper does not read GPIOs or ship board policy.
 
 ## Later bug-session changes
 
@@ -49,10 +48,21 @@ shown explicitly rather than claiming that no external mappings exist.
 The Portal integration supplies an optional `device.mode_gate` runtime lease.
 Missing/stale leases suppress actions; generic installs without that option
 retain their previous behavior. The Portal broker defaults to Game Mode and
-uses a five-second A + R1 hold to switch. OS Mode activates these assignments;
-its optional exclusive pointer scope temporarily owns the controller instead.
+uses left-paddle hold plus right-paddle taps to cycle Game → OS → Pointer → Game.
+OS Mode activates these assignments; Pointer Mode exclusively owns navigation.
+A + R1 no longer switches modes. The editor displays all three lease states.
 The physical pad is disabled only as a Hyprland mouse so native BTN_BACK cannot
 also navigate apps behind the mapper. Separate volume/power devices retain their
 OS bindings. Games retain evdev input; physical game acceptance remains separate.
 The new split OSK is disabled at the user's request; stock moarchy-keyboard stays
 active. See the parent project's docs/bugs-controls.md for tests and rollback.
+
+### Shared Omarchy controls — October 14
+
+The editor and full-window pickers now explicitly import `qs.Ui as Ui`. Back
+uses `Ui.Button` with standard hover/focus/press borders; result rows use
+`Ui.CursorSurface`, with shared TextField/separator/scrollbar surfaces. Popup
+foreground comes from `Color.popups.text`. Preserve live theme bindings and use
+actual Omarchy components for new controls. No configuration schema or binding
+record changes accompany this styling fix. Parent `docs/themed-ui.md` records
+the Portal's additional UI plugin, theme tests and remaining physical checks.

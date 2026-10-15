@@ -27,7 +27,7 @@ Existing compositor mappings and native pointer Back navigation are shown
 read-only with conflict warnings. An optional external runtime mode lease can
 suppress OS actions when games own the controller; missing/stale leases fail
 closed. Without that opt-in setting, generic behavior is unchanged. The Portal's
-five-second A + R1 toggle and libinput device policy belong to its native port.
+rear-paddle Game / OS / Pointer cycle and libinput device policy belong to its native port.
 
 ## Install
 
@@ -66,8 +66,10 @@ Development device: AYN Odin2 Portal, native ARM64 Linux, Omarchy 4.0.3 with
 omarchy-mobile, Hyprland 0.56.2 and Qt 6.12. The initial menu exports all 223
 configured shortcuts; installing Voxtype adds Omarchy’s dictation bindings.
 
-58 tests pass on the ARM device: the upstream 44, three Portal device/button
-checks, five shortcut-catalog checks and six key-catalog/mode/conflict checks.
+59 tests pass on the host; the original 58-test ARM suite and seven focused
+mode/catalog checks cover the same updated set. These include the upstream 44,
+three Portal device/button checks, five shortcut-catalog checks and seven
+key-catalog/mode/conflict checks.
 Both full-window pickers are user-accepted on the Portal. The integration tests use a synthetic
 pad and run actions in dry-run mode. Physical rear paddles and full game
 compatibility remain separate hardware checks.

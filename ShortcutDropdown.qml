@@ -6,7 +6,7 @@ import QtQuick.Window
 import QtQuick.Controls as QQC
 import qs.Commons
 import qs.Commons as Commons
-import qs.Ui
+import qs.Ui as Ui
 
 // Searchable single-select dropdown. Same trigger shape as Dropdown, but
 // the popup leads with an embedded TextField that filters the option
@@ -108,7 +108,7 @@ Item {
       font.bold: true
     }
 
-    BorderSurface {
+    Ui.BorderSurface {
       id: trigger
       width: parent.width
       height: root.rowHeight
@@ -190,7 +190,7 @@ Item {
         bottomPadding: Border.bottom(root.popupBorderSpec) + Style.spacing.hairline
         focus: true
 
-        background: BorderSurface {
+        background: Ui.BorderSurface {
           color: root.background
           borderSpec: root.popupBorderSpec
           radius: Style.cornerRadius
@@ -213,13 +213,17 @@ Item {
             width: parent.width
             height: root.popupRowHeight + Style.spacing.md
 
-            QQC.Button {
+            Ui.Button {
               id: backButton
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
               anchors.leftMargin: Style.spacing.md
               height: root.popupRowHeight
               text: "Back"
+              foreground: root.foreground
+              accent: root.accent
+              bordered: true
+              focusable: true
               onClicked: popup.close()
             }
 
@@ -243,7 +247,7 @@ Item {
             width: parent.width
             height: root.popupRowHeight + Style.spacing.controlPaddingX
 
-            TextField {
+            Ui.TextField {
               id: searchField
               anchors.fill: parent
               anchors.margins: Style.spacing.md
@@ -278,10 +282,9 @@ Item {
             }
           }
 
-          Rectangle {
+          Ui.PanelSeparator {
             width: parent.width
-            height: 1
-            color: Util.alpha(root.foreground, 0.10)
+            foreground: root.foreground
           }
 
           Item {
@@ -305,7 +308,15 @@ Item {
               clip: true
               boundsBehavior: Flickable.StopAtBounds
               model: root.filtered
-              QQC.ScrollBar.vertical: QQC.ScrollBar { }
+              QQC.ScrollBar.vertical: QQC.ScrollBar {
+                contentItem: Ui.BorderSurface {
+                  implicitWidth: Style.space(4)
+                  implicitHeight: Style.space(24)
+                  color: Commons.Color.muted
+                  radius: Style.cornerRadius
+                }
+                background: Item {}
+              }
               currentIndex: -1
               keyNavigationEnabled: false
 
@@ -339,14 +350,14 @@ Item {
                 }
               }
 
-              delegate: Rectangle {
+              delegate: Ui.CursorSurface {
                 required property var modelData
                 required property int index
                 width: resultList.width
                 height: Math.max(root.popupRowHeight, rowContent.implicitHeight + Style.spacing.rowPaddingX)
-                color: index === resultList.currentIndex
-                  ? Style.hoverFillFor(root.foreground, root.accent)
-                  : "transparent"
+                hasCursor: index === resultList.currentIndex
+                foreground: root.foreground
+                accent: root.accent
 
                 Column {
                   id: rowContent

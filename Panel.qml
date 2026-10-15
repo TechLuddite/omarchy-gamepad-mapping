@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
-import qs.Ui
+import qs.Ui as Ui
 
 // The bindings editor.
 //
@@ -11,7 +11,7 @@ import qs.Ui
 // button is called: press it on the pad and the combo is captured for you.
 // The daemon is already streaming button events to Service.qml, so capture
 // reuses that stream rather than opening the device a second time.
-Panel {
+Ui.Panel {
   id: root
   moduleName: "co.klair.controller-control"
   ipcTarget: "co.klair.controller-control"
@@ -20,6 +20,7 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
   property var service: null
+  readonly property color panelForeground: Color.popups.text
   readonly property var barIdentity: hostWidget || root
 
   readonly property string pluginDir: Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")
@@ -70,8 +71,6 @@ Panel {
       if (combo.indexOf(m.token) !== -1)
         warnings.push(m.token + ": " + m.description + (m.modifiers ? " (with keyboard modifiers)" : ""))
     }
-    if (combo.indexOf("A") !== -1 && combo.indexOf("R") !== -1)
-      warnings.push("A + R1 is reserved for the five-second OS / Game Mode switch.")
     return warnings.join("\n")
   }
 
@@ -260,14 +259,14 @@ Panel {
             height: width
             radius: width / 2
             color: root.connected
-              ? (root.enabled ? Color.accent : Qt.darker(root.barForeground, 1.6))
-              : Qt.darker(root.barForeground, 2.2)
+              ? (root.enabled ? Color.accent : Qt.darker(root.panelForeground, 1.6))
+              : Qt.darker(root.panelForeground, 2.2)
           }
 
           Text {
             Layout.fillWidth: true
             text: root.connected ? root.deviceName : "No controller connected"
-            color: root.barForeground
+            color: root.panelForeground
             elide: Text.ElideRight
             font.family: Style.font.family
             font.pixelSize: Style.font.body
@@ -301,16 +300,16 @@ Panel {
             }
           }
 
-          ToggleSwitch {
+          Ui.ToggleSwitch {
             checked: root.enabled
-            foreground: root.barForeground
+            foreground: root.panelForeground
             onToggled: if (root.service) root.service.toggleEnabled()
           }
 
-          PanelActionButton {
+          Ui.PanelActionButton {
             iconText: "󰑐"
             tooltipText: "Reload bindings"
-            foreground: root.barForeground
+            foreground: root.panelForeground
             onClicked: {
               root.refresh()
               if (root.service) root.service.reload()
@@ -318,18 +317,18 @@ Panel {
           }
         }
 
-        PanelSeparator {
+        Ui.PanelSeparator {
           Layout.fillWidth: true
-          foreground: root.barForeground
+          foreground: root.panelForeground
         }
 
         // ---- existing bindings -------------------------------------------
 
-        PanelSectionHeader {
-          text: root.service && !root.service.osMode ? "GAME MODE · OS BINDINGS SUPPRESSED" : root.service && root.service.modeSuppressed ? "OS MODE · WAITING OR POINTER CONTROLS ACTIVE" : root.enabled
+        Ui.PanelSectionHeader {
+          text: root.service && root.service.inputMode === "pointer" ? "POINTER MODE · OS BINDINGS SUPPRESSED" : root.service && !root.service.osMode ? "GAME MODE · OS BINDINGS SUPPRESSED" : root.service && root.service.modeSuppressed ? "OS MODE · WAITING FOR INPUT RELEASE" : root.enabled
             ? root.bindings.length + " BINDINGS"
             : root.bindings.length + " BINDINGS · DISABLED"
-          foreground: root.enabled ? root.barForeground : Color.urgent
+          foreground: root.enabled ? root.panelForeground : Color.urgent
         }
 
         Flickable {
@@ -382,7 +381,7 @@ Panel {
                     Layout.fillWidth: true
                     visible: text !== ""
                     text: bindingRow.modelData.description || ""
-                    color: root.barForeground
+                    color: root.panelForeground
                     elide: Text.ElideRight
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
@@ -393,7 +392,7 @@ Panel {
                     text: (bindingRow.isCommand ? "$ " : "") + bindingRow.actionText
                       + (bindingRow.modelData.repeat ? "  ·  repeat" : "")
                       + (bindingRow.modelData.hold ? "  ·  hold" : "")
-                    color: Qt.darker(root.barForeground, 1.6)
+                    color: Qt.darker(root.panelForeground, 1.6)
                     elide: Text.ElideRight
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
@@ -410,11 +409,11 @@ Panel {
                   }
                 }
 
-                PanelActionButton {
+                Ui.PanelActionButton {
                   Layout.alignment: Qt.AlignTop
                   iconText: "󰆴"
                   tooltipText: "Remove binding"
-                  foreground: root.barForeground
+                  foreground: root.panelForeground
                   hoverColor: Color.urgent
                   onClicked: root.removeBinding(bindingRow.modelData.combo)
                 }
@@ -423,21 +422,21 @@ Panel {
           }
         }
 
-        PanelSeparator {
+        Ui.PanelSeparator {
           Layout.fillWidth: true
-          foreground: root.barForeground
+          foreground: root.panelForeground
         }
 
         // ---- new binding --------------------------------------------------
 
-        PanelSectionHeader {
+        Ui.PanelSectionHeader {
           text: "EXISTING OS MAPPINGS · READ ONLY"
-          foreground: root.barForeground
+          foreground: root.panelForeground
         }
         Text {
           Layout.fillWidth: true
           text: root.mappingsChecked ? "Mappings outside this plugin are shown below. Native pointer navigation also depends on per-device settings; volume and power retain their OS bindings." : "Could not check existing OS mappings. Tap Reload to retry."
-          color: root.barForeground
+          color: root.panelForeground
           wrapMode: Text.WordWrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -448,16 +447,16 @@ Panel {
             required property var modelData
             Layout.fillWidth: true
             text: modelData.token + " · " + modelData.description + (modelData.modifiers ? " · keyboard modifiers " + modelData.modifiers : "")
-            color: root.barForeground
+            color: root.panelForeground
             wrapMode: Text.WordWrap
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
           }
         }
 
-        PanelSectionHeader {
+        Ui.PanelSectionHeader {
           text: "NEW BINDING"
-          foreground: root.barForeground
+          foreground: root.panelForeground
         }
 
         // Step 1 of the flow, spelled out: the pad is the input device for
@@ -465,7 +464,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: root.captureHint
-          color: root.capturing ? Color.accent : Qt.darker(root.barForeground, 1.5)
+          color: root.capturing ? Color.accent : Qt.darker(root.panelForeground, 1.5)
           wrapMode: Text.WordWrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -475,7 +474,7 @@ Panel {
           Layout.fillWidth: true
           spacing: Style.space(8)
 
-          Button {
+          Ui.Button {
             text: root.capturing
               ? "Waiting…"
               : (root.draftCombo.length > 0
@@ -484,7 +483,8 @@ Panel {
             enabled: root.connected
             selected: root.capturing || root.draftCombo.length > 0
             bordered: true
-            foreground: root.barForeground
+            focusable: true
+            foreground: root.panelForeground
             onClicked: root.beginCapture()
           }
 
@@ -493,7 +493,7 @@ Panel {
         ShortcutDropdown {
           id: shortcutPicker
           Layout.fillWidth: true
-          foreground: root.barForeground
+          foreground: root.panelForeground
           label: "2. Choose an Omarchy shortcut"
           placeholderText: "Search actions or keys…"
           emptyText: "No matching shortcuts"
@@ -513,7 +513,7 @@ Panel {
         ShortcutDropdown {
           id: keyboardPicker
           Layout.fillWidth: true
-          foreground: root.barForeground
+          foreground: root.panelForeground
           label: "Or choose a standard keyboard key"
           placeholderText: "Search keyboard keys…"
           rowHeight: Style.space(44)
@@ -541,20 +541,22 @@ Panel {
           Layout.fillWidth: true
           spacing: Style.space(8)
 
-          Button {
+          Ui.Button {
             text: "3. Save binding"
             enabled: root.draftReady
             bordered: true
-            foreground: root.barForeground
+            focusable: true
+            foreground: root.panelForeground
             onClicked: root.saveDraft()
           }
 
           Item { Layout.fillWidth: true }
 
-          Button {
+          Ui.Button {
             text: "Clear"
             bordered: true
-            foreground: root.barForeground
+            focusable: true
+            foreground: root.panelForeground
             onClicked: {
               if (root.service) root.service.cancelCapture()
               root.clearDraft()

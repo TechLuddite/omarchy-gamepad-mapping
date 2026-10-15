@@ -47,6 +47,17 @@ class ModesAndCatalog(unittest.TestCase):
                 daemon._fire(daemon.engine.press('BACK_BUTTON',1)[0])
                 run.assert_not_called()
 
+    def test_daemon_reports_all_three_external_modes(self):
+        for mode in ('game', 'os', 'pointer'):
+            stream = io.StringIO()
+            daemon = Daemon(Config({'device': {'mode_gate': '/unused'}}), stream=stream)
+            state = {'mode': mode, 'os_mode': mode != 'game', 'mapper_allowed': mode == 'os'}
+            with patch('engine.daemon.mode_snapshot', return_value=state), patch('engine.daemon.mode_allowed', return_value=mode == 'os'):
+                daemon.emit_state()
+            emitted = json.loads(stream.getvalue())
+            self.assertEqual(emitted['input_mode'], mode)
+            self.assertEqual(emitted['mode_suppressed'], mode != 'os')
+
     def test_external_os_and_native_back_are_distinct(self):
         r=external_bindings([
             {'key':'XF86AudioRaiseVolume','description':'Volume up','modmask':0},

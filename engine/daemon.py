@@ -76,6 +76,7 @@ class Daemon:
             self.running = False
 
     def emit_state(self) -> None:
+        mode = mode_snapshot(self.config.device.get("mode_gate"))
         self.emit(
             "state",
             connected=bool(self.pads),
@@ -87,8 +88,9 @@ class Daemon:
             exclusive=self.config.exclusive,
             enabled=self.config.enabled,
             paused=self.paused,
-            os_mode=mode_snapshot(self.config.device.get("mode_gate")).get("os_mode") is True,
-            mode_suppressed=not mode_allowed(self.config.device.get("mode_gate")),
+            os_mode=mode.get("os_mode") is True,
+            input_mode=mode.get("mode", "os" if mode.get("os_mode") is True else "game"),
+            mode_suppressed=mode.get("mapper_allowed") is not True,
         )
 
     # -- device management --------------------------------------------------
@@ -295,7 +297,7 @@ class Daemon:
 
             now = time.monotonic()
             permitted = mode_allowed(self.config.device.get("mode_gate"))
-            mode_state = (mode_snapshot(self.config.device.get("mode_gate")).get("os_mode") is True, permitted)
+            mode_state = (mode_snapshot(self.config.device.get("mode_gate")).get("mode"), permitted)
             if mode_state != self._mode_state:
                 self._mode_release = bool(self.engine.held)
                 self.engine.reset()
