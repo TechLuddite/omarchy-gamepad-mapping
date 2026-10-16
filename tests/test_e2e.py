@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from virtual_pad import NAME, VirtualPad  # noqa: E402
+from engine.devices import DeviceScanner, Gamepad  # noqa: E402
 
 # The daemon runs under whatever interpreter is running the tests -- the engine
 # is pure stdlib, so there is no separate environment to reach for.
@@ -507,3 +508,60 @@ class TestAliases(unittest.TestCase):
             pad.close()
         finally:
             harness.stop()
+
+
+class TestDedicatedBack(unittest.TestCase):
+    """Real evdev events must keep dedicated Back apart from legacy Select."""
+
+    def setUp(self):
+        config = {
+            **CONFIG,
+            "bindings": [
+                {"combo": "BACK", "exec": "true", "description": "Select"},
+                {"combo": "BACK_BUTTON", "exec": "true", "description": "Back"},
+                {"combo": "BACK_BUTTON+START", "exec": "true", "description": "Back chord"},
+            ],
+        }
+        self.harness = DaemonHarness(config)
+        self.addCleanup(self.harness.stop)
+        self.harness.wait_for("started")
+        self.pad = VirtualPad(back_button=True)
+        self.addCleanup(self.pad.close)
+        self.harness.wait_for("connected", timeout=8.0)
+
+    def test_dedicated_back_fires_without_select(self):
+        # Wait out the chord window because BACK_BUTTON+START is also bound.
+        self.pad.tap("BACK_BUTTON", hold=0.1)
+        fire = self.harness.wait_for("fire", description="Back")
+        self.assertEqual(fire["combo"], ["BACK_BUTTON"])
+        release = self.harness.wait_for("button", button="BACK_BUTTON", pressed=False)
+        self.assertEqual(release["held"], [])
+        self.assertEqual([f["description"] for f in self.harness.fires()], ["Back"])
+
+    def test_select_still_activates_legacy_back_binding(self):
+        self.pad.tap("SELECT")
+        fire = self.harness.wait_for("fire", description="Select")
+        self.assertEqual(fire["combo"], ["SELECT"])
+        self.harness.wait_for("button", button="SELECT", pressed=False)
+        self.assertEqual([f["description"] for f in self.harness.fires()], ["Select"])
+
+    def test_dedicated_back_chord_does_not_fire_single_binding(self):
+        self.pad.chord("BACK_BUTTON", "START")
+        fire = self.harness.wait_for("fire", description="Back chord")
+        self.assertEqual(fire["combo"], ["BACK_BUTTON", "START"])
+        self.harness.wait_for("button", button="BACK_BUTTON", pressed=False)
+        self.assertEqual([f["description"] for f in self.harness.fires()], ["Back chord"])
+
+    def test_nonexclusive_input_remains_readable_by_another_client(self):
+        info = next(info for info in DeviceScanner().find_pads([NAME.lower()])
+                    if info.name == NAME)
+        observer = Gamepad(info, CONFIG["settings"])
+        self.addCleanup(observer.close)
+        self.pad.tap("BACK_BUTTON", hold=0.1)
+        self.harness.wait_for("fire", description="Back")
+        self.pad.tap("SELECT")
+        self.harness.wait_for("fire", description="Select")
+        self.assertEqual(observer.read(), [
+            ("BACK_BUTTON", True), ("BACK_BUTTON", False),
+            ("SELECT", True), ("SELECT", False),
+        ])
