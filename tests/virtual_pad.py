@@ -59,16 +59,20 @@ class VirtualPad:
         name: str = NAME,
         settle: float = 0.45,
         dpad_on_stick: bool = False,
+        back_button: bool = False,
     ):
         # When True the d-pad is sent on ABS_X/ABS_Y with a 0..255 range,
         # exactly as an 8BitDo does, instead of on the hat.
         self.dpad_on_stick = dpad_on_stick
+        self.buttons = dict(BUTTONS)
+        if back_button:
+            self.buttons["BACK_BUTTON"] = BTN_CODES["BACK"]
         self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         try:
             fcntl.ioctl(self.fd, li.UI_SET_EVBIT, li.EV_KEY)
             fcntl.ioctl(self.fd, li.UI_SET_EVBIT, li.EV_ABS)
             fcntl.ioctl(self.fd, li.UI_SET_EVBIT, li.EV_SYN)
-            for code in BUTTONS.values():
+            for code in self.buttons.values():
                 fcntl.ioctl(self.fd, li.UI_SET_KEYBIT, code)
             for axis in (ABS_CODES["HAT0X"], ABS_CODES["HAT0Y"]):
                 fcntl.ioctl(self.fd, li.UI_SET_ABSBIT, axis)
@@ -98,8 +102,8 @@ class VirtualPad:
         os.write(self.fd, li.pack_event(ev_type, code, value))
 
     def _set(self, button: str, pressed: bool) -> None:
-        if button in BUTTONS:
-            self._emit(li.EV_KEY, BUTTONS[button], 1 if pressed else 0)
+        if button in self.buttons:
+            self._emit(li.EV_KEY, self.buttons[button], 1 if pressed else 0)
         elif self.dpad_on_stick and button in STICK:
             axis, value = STICK[button]
             self._emit(li.EV_ABS, axis, value if pressed else 128)

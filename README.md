@@ -182,6 +182,13 @@ available: `L`, `R`, `L2`, `R2`, `SELECT`, `START`, `MODE`, `THUMBL`,
 `THUMBR`, `DPAD_UP/DOWN/LEFT/RIGHT`, and stick directions such as
 `LSTICK_LEFT`.
 
+Controllers that report a dedicated Linux `BTN_BACK` use `BACK_BUTTON`.
+This is independent of gamepad `SELECT` (`BTN_SELECT`). The existing `BACK`
+configuration alias still means `SELECT`, so saved bindings keep their meaning;
+use `BACK_BUTTON` to bind or remap the dedicated input. This names events on
+devices the plugin already selects; it does not enable mouse or media-only
+input devices.
+
 Nintendo-layout pads (8BitDo, Switch Pro) put A on the right and B on the
 bottom — the opposite of where evdev expects them. Whether that matters
 depends on the firmware: an 8BitDo Zero 2 in D-input is **label-faithful**, so
@@ -339,14 +346,25 @@ only genuinely new nodes are opened.
 
 ## Tests
 
+The end-to-end tests create real virtual controllers visible to other
+applications. Run them in an environment whose input devices cannot reach
+your desktop applications. The daemon's `--dry-run` suppresses mapped output
+actions only; it does not isolate the synthetic controller's input.
+
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-44 tests, no dependencies. The end-to-end suite fabricates a synthetic gamepad
+54 tests, no dependencies. The end-to-end suite fabricates a synthetic gamepad
 over uinput and drives the real daemon process against it, so chord
 resolution, hotplug, disconnect, repeat, and hold are all covered without
 touching real hardware.
+Dedicated Back coverage includes legacy binding save/reload, independent
+actions and chords, and a second evdev reader on a nonexclusive device.
+The tests need write access to `/dev/uinput` and read access to the generated
+`/dev/input/event*` nodes (for example, membership in the `input` group).
+The dedicated Back fixture can be classified as a mouse, so access granted
+only to joystick devices is insufficient.
 
 ## License
 
