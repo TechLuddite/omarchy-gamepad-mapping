@@ -1,6 +1,7 @@
 """Native ownership and recovery checks using mocked input I/O only.
 
-Never run a daemon loop or open an input node/virtual device in these tests.
+Loop timing uses mocked select, clocks, scanner, devices and action output.
+No input node, virtual device, real select or process signal is used.
 """
 import contextlib
 import io
@@ -292,6 +293,9 @@ class FakePad:
     def apply(self, settings, aliases):
         self.aliases = aliases
 
+    def fileno(self):
+        return 999
+
     def read(self):
         was_ready = self.ready
         events, self.events = self.events, []
@@ -522,6 +526,30 @@ class DaemonModeTests(unittest.TestCase):
         runner.close.assert_not_called()
         runner.prepare.assert_called_once()
         self.assertEqual(daemon.engine.held,set())
+
+    def test_loop_idle_and_grab_retry_keep_config_stats_at_normal_rate(self):
+        for connected, enabled, expected in ((False,True,2.),(True,False,2.),(True,True,.05)):
+            with self.subTest(connected=connected,enabled=enabled):
+                daemon,runner=self.daemon(pads=int(connected),config=configuration(enabled=enabled))
+                daemon.scanner=Mock()
+                daemon.scanner.find_pads.return_value=[SimpleNamespace(path=p.path) for p in daemon.pads.values()]
+                for pad in daemon.pads.values():
+                    pad.grabbed=False
+                    pad.allow_grab=False
+                clock={'now':0.}
+                timeouts=[]
+                def wait(fds,write,error,timeout):
+                    timeouts.append(timeout)
+                    clock['now']+=timeout
+                    if len(timeouts)==3:daemon.running=False
+                    return [],[],[]
+                daemon.running=True
+                daemon._last_config_check=0.
+                with patch('engine.daemon.time.monotonic',side_effect=lambda:clock['now']), patch('engine.daemon.select.select',side_effect=wait), patch('engine.daemon.stamp',return_value=daemon._config_stamp) as stat:
+                    daemon._loop()
+                self.assertEqual(timeouts,[expected]*3)
+                self.assertEqual(stat.call_count,0 if expected==.05 else 3)
+                runner.run.assert_not_called()
 
     def test_fast_retry_only_for_enabled_connected_waiting_grab(self):
         daemon, _ = self.daemon(pads=0)
