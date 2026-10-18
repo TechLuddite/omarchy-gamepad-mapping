@@ -9,15 +9,20 @@ import select
 import signal
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
+from contextlib import nullcontext
 
 from . import __version__
 from .actions import ActionRunner
 from .buttons import format_combo, parse_combo
+from .catalog import CatalogError, live_shortcuts
 from .config import CONFIG_PATH, PID_PATH, Binding, Config, ConfigError, editing, load
 from .daemon import Daemon
 from .devices import DeviceGone, Gamepad, find_pads, scan
 from .keys import KeyParseError, parse_keys
+from .keyboard_catalog import keyboard_catalog
+from .pointer import PointerConfigError, validate_pointer
 
 # -- output helpers ----------------------------------------------------------
 
@@ -206,6 +211,98 @@ def cmd_list(args) -> int:
         description = f"  {dim('- ' + binding.description)}" if binding.description else ""
         marker = " " if binding.enabled else dim("x")
         print(f" {marker} {green(label)}  ->  {action}{description}{suffix}")
+    return 0
+
+
+def cmd_profile(args) -> int:
+    if args.profile_command == "list":
+        config = _load(args)
+        result = {"active": config.active_profile, "names": config.profile_names()}
+        if args.json:
+            print(json.dumps(result))
+        else:
+            for name in result["names"]:
+                print(f"{'*' if name == result['active'] else ' '} {name}")
+        return 0
+    with _edit(args) as config:
+        if args.profile_command == "create":
+            name = config.profile_create(args.name)
+        elif args.profile_command == "use":
+            name = config.profile_use(args.name)
+        elif args.profile_command == "rename":
+            name = config.profile_rename(args.old, args.new)
+        else:
+            name = config.profile_delete(args.name, switch_to=args.switch_to)
+        config.save()
+    _notify_daemon(signal.SIGHUP)
+    print(f"profile {args.profile_command}: {name}")
+    return 0
+
+
+def cmd_conflicts(args) -> int:
+    from .conflicts import report
+
+    context = report()
+    if args.json:
+        print(json.dumps(context))
+        return 0
+    if not context["available"]:
+        return fail(context["error"])
+    print("Existing compositor mappings (potential overlap only):")
+    for binding in context["bindings"]:
+        print(f" {binding['token']} [evdev {binding['code']}, modifiers {binding['modifiers']}, "
+              f"submap {binding['submap'] or 'default'}]: {binding['description']}")
+    if not context["bindings"]:
+        print(" No recognized mappings.")
+    return 0
+
+
+def cmd_pointer(args) -> int:
+    update = {}
+    if args.update is not None:
+        try:
+            update = json.loads(args.update)
+        except ValueError as exc:
+            raise ConfigError("pointer --set requires a JSON object") from exc
+        if not isinstance(update, dict):
+            raise ConfigError("pointer --set requires a JSON object")
+    if args.selection is not None:
+        update["enabled"] = args.selection == "enable"
+    mutating = args.update is not None or args.selection is not None
+    with (_edit(args) if mutating else nullcontext(_load(args))) as config:
+        try:
+            settings = validate_pointer({**config.pointer, **update})
+        except PointerConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+        if mutating:
+            config.pointer = asdict(settings)
+            config._pointer_present = True
+            config.save()
+    if mutating:
+        _notify_daemon(signal.SIGHUP)
+    if args.json:
+        print(json.dumps(asdict(settings)))
+    else:
+        print("Pointer settings " + ("enabled (OS mode required)" if settings.enabled else "disabled"))
+    return 0
+
+
+def cmd_mode(args) -> int:
+    if args.selection is not None:
+        with _edit(args) as config:
+            config.set_mode(args.selection)
+            config.save()
+        _notify_daemon(signal.SIGHUP)
+    else:
+        config = _load(args)
+    state = {"modes_enabled": config.modes_enabled, "input_mode": config.input_mode,
+             "active": config.modes["active"], "requested_exclusive": config.effective_exclusive}
+    if args.json:
+        print(json.dumps(state))
+    else:
+        print(f"Controller input mode: {config.input_mode}")
+        if args.selection is not None:
+            print("Saved; live ownership and readiness are reported by the running daemon.")
     return 0
 
 
@@ -515,6 +612,19 @@ def cmd_daemon(args) -> int:
 # -- argument parsing --------------------------------------------------------
 
 
+def cmd_shortcuts(args) -> int:
+    try:
+        print(json.dumps(live_shortcuts()))
+        return 0
+    except CatalogError as exc:
+        return fail(str(exc))
+
+
+def cmd_keyboard_keys(args) -> int:
+    print(json.dumps(keyboard_catalog()))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="controller-control",
@@ -524,6 +634,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", help=f"config file (default: {CONFIG_PATH})")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    p = sub.add_parser("profile", help="manage named OS mapping profiles")
+    profiles = p.add_subparsers(dest="profile_command", required=True)
+    item = profiles.add_parser("list", help="list profiles without migrating legacy config")
+    item.add_argument("--json", action="store_true")
+    item.set_defaults(func=cmd_profile)
+    for action in ("create", "use", "delete"):
+        item = profiles.add_parser(action)
+        item.add_argument("name")
+        if action == "delete":
+            item.add_argument("--switch-to", help="explicit replacement when deleting the active profile")
+        item.set_defaults(func=cmd_profile)
+    item = profiles.add_parser("rename")
+    item.add_argument("old")
+    item.add_argument("new")
+    item.set_defaults(func=cmd_profile)
+
+    p = sub.add_parser("shortcuts", help="list replayable live Hyprland shortcuts as JSON")
+    p.set_defaults(func=cmd_shortcuts)
+
+    p = sub.add_parser("keyboard-keys", help="list standard keyboard keys as JSON")
+    p.set_defaults(func=cmd_keyboard_keys)
+
     p = sub.add_parser("devices", help="list input devices")
     p.add_argument("--all", action="store_true", help="include non-input devices")
     p.add_argument("--json", action="store_true")
@@ -532,6 +664,21 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("list", help="show configured bindings")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("conflicts", help="read potential overlap with compositor mappings")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_conflicts)
+
+    p = sub.add_parser("mode", help="inspect or opt into Game/OS controller ownership")
+    p.add_argument("selection", nargs="?", choices=("game", "os", "enable", "disable"))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_mode)
+
+    p = sub.add_parser("pointer", help="inspect or configure optional OS pointer controls")
+    p.add_argument("selection", nargs="?", choices=("enable", "disable"))
+    p.add_argument("--set", dest="update", help="merge a JSON object of pointer settings")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_pointer)
 
     p = sub.add_parser("monitor", help="print buttons as you press them")
     p.add_argument("--timeout", type=float, default=30.0)

@@ -7,9 +7,12 @@ import json
 import os
 import tempfile
 from contextlib import contextmanager
+import unicodedata
+from copy import deepcopy
 from pathlib import Path
 
 from .buttons import format_combo, normalize_button, parse_combo
+from .pointer import PointerConfigError, validate_pointer
 
 CONFIG_VERSION = 1
 
@@ -134,6 +137,16 @@ class ConfigError(Exception):
     """Raised when a config file cannot be understood."""
 
 
+def profile_name(value: str) -> str:
+    """Normalize a user-supplied name; names are labels, never filenames."""
+    if not isinstance(value, str):
+        raise ConfigError("profile name must be a string")
+    name = value.strip()
+    if not name or len(name) > 64 or any((unicodedata.category(c) in ("Cc", "Cs") or (unicodedata.category(c) == "Cf" and c != "\u200d")) for c in value):
+        raise ConfigError("profile name must contain 1–64 characters and no control characters")
+    return name
+
+
 class Binding:
     """One combo -> action mapping."""
 
@@ -200,8 +213,15 @@ class Binding:
 
 class Config:
     def __init__(self, raw: dict | None = None, path: Path | None = None):
-        raw = raw or {}
+        raw = {} if raw is None else raw
+        if not isinstance(raw, dict):
+            raise ConfigError("top level must be an object")
         self.path = path or CONFIG_PATH
+        self._extra_top = deepcopy({key: value for key, value in raw.items()
+                                    if key not in {"version", "enabled", "device", "settings", "bindings", "pointer", "profiles", "modes"}})
+        self._pointer_present = "pointer" in raw
+        self.pointer = self._read_pointer(raw.get("pointer", {}))
+        self._profiles: dict | None = None
 
         version = raw.get("version", CONFIG_VERSION)
         if version != CONFIG_VERSION:
@@ -213,6 +233,18 @@ class Config:
         # A master switch, so the pad can be silenced without losing bindings
         # or dropping the Bluetooth connection.
         self.enabled = bool(raw.get("enabled", True))
+
+        self._modes_present = "modes" in raw
+        modes = raw.get("modes", {})
+        if not isinstance(modes, dict):
+            raise ConfigError("modes must be an object")
+        if set(modes) - {"enabled", "active"}:
+            raise ConfigError("modes supports only enabled and active")
+        if not isinstance(modes.get("enabled", False), bool):
+            raise ConfigError("modes.enabled must be a boolean")
+        if modes.get("active", "game") not in ("game", "os"):
+            raise ConfigError("modes.active must be game or os")
+        self.modes = {"enabled": modes.get("enabled", False), "active": modes.get("active", "game")}
 
         raw_device = raw.get("device") or {}
         if not isinstance(raw_device, dict):
@@ -266,7 +298,17 @@ class Config:
         if not isinstance(raw_bindings, list):
             raise ConfigError("'bindings' must be a list")
 
-        self.bindings: list[Binding] = []
+        self.bindings = self._read_bindings(raw_bindings)
+        if "profiles" in raw:
+            self._load_profiles(raw["profiles"], raw)
+
+    @staticmethod
+    def _read_bindings(raw_bindings: list) -> list[Binding]:
+        if raw_bindings is None:
+            raw_bindings = DEFAULT_BINDINGS
+        if not isinstance(raw_bindings, list):
+            raise ConfigError("'bindings' must be a list")
+        bindings: list[Binding] = []
         seen: dict[tuple[str, ...], int] = {}
         for index, item in enumerate(raw_bindings):
             binding = Binding(item, index)
@@ -276,7 +318,136 @@ class Config:
                     f"bound at bindings[{seen[binding.combo]}]"
                 )
             seen[binding.combo] = index
-            self.bindings.append(binding)
+            bindings.append(binding)
+        return bindings
+
+    def _load_profiles(self, raw: dict, mirrors: dict) -> None:
+        if not isinstance(raw, dict) or not {"active", "items"} <= set(raw) or set(raw) - {"active", "items", "mirror_of"}:
+            raise ConfigError("profiles must contain 'active' and 'items'")
+        items = raw["items"]
+        if not isinstance(items, dict) or not items:
+            raise ConfigError("profiles.items must be a nonempty object")
+        validated = {}
+        for name, item in items.items():
+            if profile_name(name) != name:
+                raise ConfigError("stored profile names must not have surrounding whitespace")
+            if not isinstance(item, dict) or set(item) != {"bindings", "pointer"}:
+                raise ConfigError(f"profile {name!r} must contain only 'bindings' and 'pointer'")
+            try:
+                bindings = self._read_bindings(item["bindings"])
+                pointer = self._read_pointer(item["pointer"])
+            except ConfigError as exc:
+                raise ConfigError(f"profile {name!r}: {exc}") from exc
+            validated[name] = {"bindings": [b.to_dict() for b in bindings], "pointer": pointer}
+        active = raw["active"]
+        if profile_name(active) != active or active not in validated:
+            raise ConfigError("profiles.active must name an existing profile")
+        owner = raw.get("mirror_of")
+        if owner is not None and owner != active:
+            raise ConfigError("profiles.active differs from the top-level mirror owner; use profile use to switch safely")
+        if owner is None:
+            for field, value in (("bindings", [b.to_dict() for b in self._read_bindings(mirrors.get("bindings", validated[active]["bindings"]))]),
+                                 ("pointer", self._read_pointer(mirrors.get("pointer", validated[active]["pointer"])))):
+                if value != validated[active][field]:
+                    raise ConfigError("ambiguous profile mirrors; select a profile with matching top-level bindings and pointer")
+        self._profiles = {"active": active, "items": validated}
+        self._select_profile(active)
+        # Old versions and manual editors only understand the top-level
+        # fields. Honor those edits for the active profile instead of silently
+        # resurrecting an older snapshot; absent mirrors use the snapshot.
+        if "bindings" in mirrors:
+            self.bindings = self._read_bindings(mirrors["bindings"])
+        if "pointer" in mirrors:
+            self.pointer = self._read_pointer(mirrors["pointer"])
+        self._sync_profile()
+
+    @property
+    def active_profile(self) -> str:
+        return self._profiles["active"] if self._profiles is not None else "Current"
+
+    def profile_names(self) -> list[str]:
+        return sorted(self._profiles["items"]) if self._profiles is not None else ["Current"]
+
+    def _profile_snapshot(self) -> dict:
+        return {"bindings": [b.to_dict() for b in self.bindings], "pointer": deepcopy(self.pointer)}
+
+    def _sync_profile(self) -> None:
+        if self._profiles is not None:
+            self._profiles["items"][self.active_profile] = self._profile_snapshot()
+
+    def _ensure_profiles(self) -> None:
+        if self._profiles is None:
+            self._profiles = {"active": "Current", "items": {"Current": self._profile_snapshot()}}
+            self._pointer_present = True
+
+    def _select_profile(self, name: str) -> None:
+        item = self._profiles["items"][name]
+        self.bindings = self._read_bindings(item["bindings"])
+        self.pointer = deepcopy(item["pointer"])
+        self._pointer_present = True
+        self._profiles["active"] = name
+
+    def profile_create(self, name: str) -> str:
+        name = profile_name(name)
+        if name in self.profile_names():
+            raise ConfigError(f"profile {name!r} already exists")
+        self._ensure_profiles()
+        self._sync_profile()
+        self._profiles["items"][name] = self._profile_snapshot()
+        self._select_profile(name)
+        return name
+
+    def profile_use(self, name: str) -> str:
+        name = profile_name(name)
+        if name not in self.profile_names():
+            raise ConfigError(f"unknown profile {name!r}")
+        self._ensure_profiles()
+        self._sync_profile()
+        self._select_profile(name)
+        return name
+
+    def profile_rename(self, old: str, new: str) -> str:
+        old, new = profile_name(old), profile_name(new)
+        if old not in self.profile_names():
+            raise ConfigError(f"unknown profile {old!r}")
+        if new in self.profile_names():
+            raise ConfigError(f"profile {new!r} already exists")
+        self._ensure_profiles()
+        self._sync_profile()
+        self._profiles["items"][new] = self._profiles["items"].pop(old)
+        if self.active_profile == old:
+            self._profiles["active"] = new
+        return new
+
+    def profile_delete(self, name: str, *, switch_to: str | None = None) -> str:
+        name = profile_name(name)
+        if name not in self.profile_names():
+            raise ConfigError(f"unknown profile {name!r}")
+        if len(self.profile_names()) <= 1:
+            raise ConfigError("cannot delete the last profile")
+        if switch_to is not None:
+            switch_to = profile_name(switch_to)
+            if name != self.active_profile:
+                raise ConfigError("profile selection changed; review deletion again")
+            if switch_to == name or switch_to not in self.profile_names():
+                raise ConfigError("select another existing profile before deleting")
+        elif name == self.active_profile:
+            raise ConfigError("cannot delete the active profile; select another first")
+        self._sync_profile()
+        if switch_to is not None:
+            self._select_profile(switch_to)
+        del self._profiles["items"][name]
+        return name
+
+    @staticmethod
+    def _read_pointer(raw: dict) -> dict:
+        if not isinstance(raw, dict):
+            raise ConfigError("pointer must be an object")
+        try:
+            settings = validate_pointer(raw)
+        except PointerConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+        return {name: deepcopy(getattr(settings, name)) for name in settings.__dataclass_fields__}
 
     # -- accessors ----------------------------------------------------------
 
@@ -295,6 +466,29 @@ class Config:
     @property
     def exclusive(self) -> bool:
         return bool(self.device.get("exclusive", False))
+
+    @property
+    def modes_enabled(self) -> bool:
+        return self.modes["enabled"]
+
+    @property
+    def input_mode(self) -> str:
+        return self.modes["active"] if self.modes_enabled else "legacy"
+
+    @property
+    def effective_exclusive(self) -> bool:
+        if not self.modes_enabled:
+            return self.exclusive
+        return self.enabled and self.input_mode == "os"
+
+    def set_mode(self, selection: str) -> None:
+        self._modes_present = True
+        if selection in ("game", "os"):
+            self.modes.update(enabled=True, active=selection)
+        elif selection in ("enable", "disable"):
+            self.modes["enabled"] = selection == "enable"
+        else:
+            raise ConfigError("mode must be game, os, enable or disable")
 
     def setting(self, name: str) -> float:
         return float(self.settings.get(name, DEFAULT_SETTINGS[name]))
@@ -325,13 +519,22 @@ class Config:
     # -- serialisation ------------------------------------------------------
 
     def to_dict(self) -> dict:
-        return {
+        self._sync_profile()
+        result = {
+            **deepcopy(self._extra_top),
             "version": CONFIG_VERSION,
             "enabled": self.enabled,
             "device": self.device,
             "settings": self.settings,
             "bindings": [b.to_dict() for b in self.bindings],
         }
+        if self._modes_present or self.modes != {"enabled": False, "active": "game"}:
+            result["modes"] = dict(self.modes)
+        if self._pointer_present or self.pointer != self._read_pointer({}):
+            result["pointer"] = deepcopy(self.pointer)
+        if self._profiles is not None:
+            result["profiles"] = {**deepcopy(self._profiles), "mirror_of": self.active_profile}
+        return result
 
     def save(self, path: Path | None = None) -> Path:
         target = Path(path or self.path)
@@ -364,7 +567,15 @@ def load(path: Path | None = None, *, create: bool = False) -> Config:
             config.save()
         return config
     try:
-        raw = json.loads(target.read_text())
+        def unique_object(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ConfigError(f"{target}: duplicate JSON field {key!r}")
+                result[key] = value
+            return result
+
+        raw = json.loads(target.read_text(), object_pairs_hook=unique_object)
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{target}: invalid JSON: {exc}") from exc
     except (OSError, UnicodeDecodeError) as exc:

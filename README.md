@@ -123,6 +123,55 @@ The panel works from the keyboard too: up and down pick a binding, Enter edits
 it, `x` removes it, `r` records a combo, `t` flips the master switch, and Esc
 leaves a text field or closes the panel.
 
+For an ordinary window with touchscreen-keyboard access, choose **Open window**
+in the panel, or run:
+
+```bash
+omarchy-shell controller openWindow
+omarchy-shell controller closeWindow
+```
+
+The service lazily owns one editor shared by the popup and window. Switching
+views preserves the draft and active recording; closing cancels recording.
+The window also works without a bar widget. Focused fields and buttons scroll
+into view in a short window. Tab moves between controls in the window; popup Tab switches bar panels. Esc leaves a text
+field, cancels recording, then closes, one step at a time. Disabling mapping
+leaves the editor usable.
+
+The optional **Current shortcuts** picker searches descriptions and key chords
+from the active Hyprland session. Selecting a row fills the editable Keys field;
+an empty or unchanged picker/loaded description is filled too; manual edits are retained. You can still type any supported custom key
+chord or switch to Command. Selection never runs the action, and saving still
+requires a recorded controller combo and **Save binding**.
+
+The shortcut catalog loads when its dropdown first opens and is then cached.
+The explicit Reload button invalidates that cache and refreshes overlap context when available; opening the editor does not spawn catalog processes. It reads
+`hyprctl -j binds` directly, without relying on an Omarchy menu cache or copying
+commands. With no current session, a single available session is selected; with
+multiple sessions, set `HYPRLAND_INSTANCE_SIGNATURE` before launching the shell.
+An unavailable catalog does not prevent manual editing. This optional picker
+uses Omarchy's shared `SearchableDropdown` control and its keyboard navigation:
+In the ordinary window, Tab to the trigger, Enter to open, type to search, arrows to navigate, Enter to
+select, Escape to close.
+
+Only parser-supported, global keyboard shortcuts with ordinary modifier masks
+are listed. Mouse, raw keycode, submap, device-specific and special
+release/long-press bindings and the press side of a paired press/release action
+(such as push-to-talk) are omitted. Locked media/volume/brightness bindings are included. A virtual keyboard replays Linux
+key positions; keysym names and aliases such as `PLUS` can resolve differently
+on other layouts or require Shift. Check the resulting shortcut
+on your keyboard layout before relying on it. Several actions attached to the
+same chord are represented together and will retain the compositor's behavior.
+
+The optional **Standard key** picker provides 119 parser-validated keys,
+including letters, digits, navigation, punctuation, F1–F24, modifiers and keypad
+keys. Search by a friendly name or the canonical token. Selection fills the
+editable Keys field with one key; add modifiers there to build a custom chord.
+The description stays editable, and Command entry remains available. This
+catalog works without Hyprland and uses the same shared searchable UI control.
+It loads once when opened and is hidden in Command mode. Letters and punctuation use physical positions named for US layouts; for example,
+A may produce q on AZERTY. Picking a key after a trailing + retains typed modifiers.
+
 Everything is also available from the CLI:
 
 ```bash
@@ -130,7 +179,10 @@ controller-control doctor          # check permissions, config, and the pad
 controller-control devices         # what the kernel sees
 controller-control monitor         # print button tokens as you press them
 controller-control learn           # record one combo and print its token
+controller-control conflicts --json # read advisory overlap context
 controller-control list            # show configured bindings
+controller-control shortcuts       # replayable live shortcuts as JSON
+controller-control keyboard-keys   # standard keyboard keys as JSON
 controller-control bind "L + R" --keys SUPER+RETURN --description Terminal
 controller-control bind START --exec 'omarchy menu'
 controller-control unbind "L + R"
@@ -352,6 +404,145 @@ Bluetooth connection. It also notices the file changing, so a hand edit
 applies within `rescan_interval_s` (two seconds by default). Aliases, the
 d-pad source and the analog thresholds apply to a connected pad at once.
 
+## Optional Game and OS modes
+
+Existing installations keep the original behavior until modes are explicitly
+enabled. Inspect the saved selection without changing settings:
+
+```bash
+controller-control mode --json
+controller-control mode game       # enable modes; ordinary controller passthrough
+controller-control mode os         # enable modes; exclusive desktop control
+controller-control mode disable    # restore the original device.exclusive policy
+controller-control mode enable     # restore the saved Game/OS selection (Game initially)
+```
+
+Opt-in settings live in `"modes": {"enabled": true, "active": "game"}`. Config
+files without this section retain their original serialization. A mode command
+saves atomically and asks the running daemon to reload; its JSON describes saved
+configuration, not proof that a controller has acquired ownership.
+
+Game mode releases exclusive ownership and runs no desktop actions. Games read
+the original controller directly; the plugin creates no replacement controller.
+OS mode waits for all selected controllers to be neutral before acquiring
+exclusive grabs. If another program owns a controller, desktop output stays
+blocked and acquisition retries automatically. Turning the master switch off
+releases OS grabs; re-enabling waits for neutral before taking ownership again.
+The separate transient capture pause can retain an existing OS grab.
+
+Startup, reconnect, configuration/profile reload, pause/resume and input queue overflow
+reset pending chords and close virtual output. Held controls must return to
+neutral before actions resume. Snapshot failures keep output blocked. Sticks
+must return within 15% of center, triggers within 5% of rest, and hats/buttons
+to rest. Current keys are read through `EVIOCGKEY` and axis ranges/values are
+queried again; cached hotplug metadata cannot establish neutral state. Those
+strict axis thresholds protect grab acquisition only. Once grabbed, logical
+button release gates output so sub-threshold drift does not mute controls.
+`SYN_DROPPED` discards history through the next `SYN_REPORT` before a fresh
+snapshot. With multiple controllers, a shared neutral barrier and reference
+counting prevent one controller's release from clearing another's held token.
+
+Daemon events expose `modes_enabled`, `input_mode`, `input_ready`, `input_status`,
+`requested_exclusive` and `effective_exclusive`. Status distinguishes legacy,
+passthrough, disconnected, disabled, paused, waiting for a grab, waiting for
+neutral, and ready. These fields report current effective ownership separately
+from the saved requested mode. Per-device state includes snapshot readiness and
+an error when a safe snapshot is unavailable.
+
+The mode, recovery and CLI tests use mocked descriptors, snapshots, grabs and
+action runners. They do not establish physical hardware, suspend/resume or
+sustained-use acceptance, and must not be confused with isolated live input
+integration testing.
+
+## Existing compositor mappings
+
+The read-only context helper reports Hyprland bindings that may overlap an
+input token:
+
+```bash
+controller-control conflicts --json
+```
+
+Run it in the active Hyprland session. It returns
+JSON with `available`, `bindings` and `error`. Each binding includes a mapper
+`token`, numeric evdev `code`, original `key`, `description`, modifier bitmask,
+`submap` and `kind: "compositor"`. XKB keycodes are converted with the evdev
+plus-eight offset; `mouse:` codes are already evdev codes. Raw mouse Back is
+reported as `BACK_BUTTON`, preserving the legacy config alias `BACK → SELECT`.
+
+Choose **Check compositor overlaps** or the explicit **Reload** button to read
+this advisory context. Merely opening the editor does not query it. It shows
+only mappings matching a selected draft input or a saved controller input,
+applying `device.aliases` once just as the input decoder does. A label such as
+`A → B` preserves both the raw compositor identity and the recorded mapper
+identity. Modifier names and submaps remain visible. Loading, an unavailable
+read and a successful empty result have distinct messages; refresh does not
+execute a binding or change controller settings.
+
+These entries describe potential overlap, not confirmed duplicate actions.
+Modifiers, submaps, input grabs and application behavior affect whether an
+external action fires. Named key aliases are best-effort physical key matches;
+the active keyboard layout can change the identity of a symbol binding. Native
+application mouse behavior is not enumerated. An unavailable read is reported
+separately from a successful read containing no bindings. The helper never
+selects a different session, changes compositor mappings or writes mapper
+settings.
+
+### Named OS mapping profiles
+
+Profiles keep several sets of OS button mappings and pointer settings. They do
+not change the global mode, device matching, exclusive setting, master switch or
+chord timing. Game Mode remains passthrough; selecting an OS profile while in
+Game Mode only changes which mappings will be ready when you return to OS Mode.
+
+The editor's **OS profile** selector chooses an existing profile. Enter a name
+and choose **Create profile** to keep a separate copy and select it, or **Rename
+current** to change its name. Finish or Clear a binding draft first, and Apply
+or Reset unsaved pointer settings. Game Mode shows a read-only passthrough
+summary with the remembered OS profile. **Delete profile** offers a target
+selector and separate **Confirm delete** / **Cancel** controls. For the active
+target, choose its replacement. Inactive deletion keeps the current profile.
+
+```bash
+controller-control profile list --json
+controller-control profile create Travel  # clone current mappings and select Travel
+controller-control profile use Current
+controller-control profile rename Travel Couch
+controller-control profile delete Couch  # remove an inactive profile
+controller-control profile delete Current --switch-to Travel  # active replacement
+```
+
+Existing configs remain in their original single-profile structure until a
+successful explicit profile operation. Listing profiles shows an implicit
+`Current` without writing or migrating anything. Creating the first new profile
+keeps the original mappings in `Current` and selects a separate clone. Names
+are trimmed, case sensitive, limited to 64 characters and cannot contain control
+characters. Deleting the active profile requires an explicit replacement; the
+last remaining profile cannot be deleted.
+
+Profile operations save one config atomically, then notify the daemon to reload.
+Adding or removing a binding edits the active profile. Its `bindings` and
+`pointer` remain at the top level for compatibility, alongside:
+
+```json
+"profiles": {
+  "active": "Travel",
+  "mirror_of": "Travel",
+  "items": {
+    "Current": {"bindings": [], "pointer": {}},
+    "Travel": {"bindings": [], "pointer": {}}
+  }
+}
+```
+
+Top-level bindings and pointer settings remain compatibility mirrors of the
+active profile. Saved files record `profiles.mirror_of` to identify their owner.
+Changing only `profiles.active` is rejected if that owner differs, and old files
+without ownership are rejected when the mirrors disagree with the selected
+snapshot. This prevents another profile from being overwritten on the next save.
+Use `controller-control profile use NAME` to switch atomically. All inactive
+profiles are validated too.
+
 ## How chords are resolved
 
 - Bindings fire on **press**. A chord that has fired never fires one of its
@@ -394,7 +585,8 @@ invisible until it does damage.
 omarchy-shell (Quickshell)
 ├── Service.qml      runs the daemon, parses its JSON event stream, IPC
 ├── BarWidget.qml    connection glyph, pulses on fire
-└── Panel.qml        bindings editor with press-to-record capture
+├── Panel.qml        popup/window ownership
+└── EditorContent.qml shared bindings editor with press-to-record capture
         │
         └── bin/controller-control daemon
                 └── engine/   pure-stdlib evdev reader + chord recogniser
@@ -428,6 +620,22 @@ python3 -m unittest discover -s tests -p test_combos.py -v
 python3 -m unittest discover -s tests -p test_config.py -v
 python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
+python3 -m unittest discover -s tests -p test_profile_integration.py -v
+python3 -m unittest discover -s tests -p test_profiles.py -v
+python3 -m unittest discover -s tests -p test_pointer_integration.py -v
+python3 -m unittest discover -s tests -p test_native_modes.py -v
+python3 -m unittest discover -s tests -p test_catalog.py -v
+python3 -m unittest discover -s tests -p test_keyboard_catalog.py -v
+python3 -m unittest discover -s tests -p test_conflicts.py -v
+```
+
+The isolated editor check uses the installed Omarchy UI kit and Quickshell
+offscreen, with a fake CLI/service, temporary home/runtime and no session bus.
+It opens no input devices and does not start the daemon. Only the Wayland
+layer-shell wrapper is replaced; the form, window and controls are real:
+
+```bash
+python3 tests/check_editor.py
 ```
 
 The end-to-end tests create real virtual controllers visible to other
@@ -439,7 +647,7 @@ it does not isolate the synthetic controller's input.
 python3 -m unittest discover -s tests -v
 ```
 
-95 tests, no dependencies. The end-to-end suite drives the real daemon with
+The end-to-end suite drives the real daemon with
 synthetic gamepads to cover chords, hotplug, disconnect, repeat, hold, two
 pads at once, hand edits to the config, and recovery from events the kernel
 dropped. Dedicated Back coverage includes legacy binding save/reload,
@@ -448,6 +656,116 @@ device. These fixtures need write access to `/dev/uinput` and read access to
 generated `/dev/input/event*` nodes (for example, membership in `input`). The
 dedicated Back fixture can be classified as a mouse; access granted
 only to joystick devices is insufficient.
+
+
+## Optional OS pointer and scrolling
+
+`engine.pointer` is a separate, disabled-by-default backend for the native mode
+integration. Importing it or validating settings never opens an input device.
+`PointerController` takes validated `PointerSettings` (or a settings object) and
+an optional output sink. The caller must run `tick(now, axes, held,
+blocked_tokens=(), allowed=False)` on idle timer ticks as well as input events.
+`now` is monotonic seconds; `axes` maps raw ABS_X/Y (0/1) and ABS_RX/RY (3/4) to
+values in -1..1; `held` contains the current aliased button tokens.
+
+`allowed` must combine OS Mode, the master switch, connection readiness and
+capture/pause policy. Game Mode passes `allowed=False`, which releases drags,
+clears fractional motion and releases dragging. The prepared mouse is retained
+across ordinary transitions and destroyed on shutdown or output failure.
+Call `reset()` after changing device, aliases, profiles or pointer settings.
+Activation ignores buttons already held until release and requires each stick
+to return within its dead zone. This prevents clicks and jumps during a mode
+change. A scheduling stall contributes at most 50 milliseconds of motion.
+
+The settings are `enabled` (false), `pointer_stick` (`left`), `scroll_stick`
+(`right`), `speed` (900 pixels/second, 1–4000), `scroll_speed` (8 steps/second,
+1–60), `dead_zone` (0.18), `scroll_dead_zone` (0.35), `invert_scroll` (false) and
+`buttons` (`{"A":"left","B":"right"}`). Stick selectors also accept `none`;
+the two active roles cannot share a stick. Dead zones must be at least zero and
+less than 0.95. Button names use normal aliases and support custom single-token
+alias targets; actions are only `left` and `right`, and an empty map is valid.
+
+Saved bindings take precedence. Supply all claimed final button tokens in
+`blocked_tokens`. Also include raw `LSTICK_*`/`RSTICK_*` directions whose aliases
+are claimed: any saved direction reserves its entire physical stick. The caller
+must preserve that raw provenance when aliases or a stick-backed d-pad rename
+those directions. Blocking a held click releases it; unblocking still requires
+a fresh press. Releasing a reserved stick requires neutral before motion.
+
+Movement uses radial dead zones, quadratic acceleration and fractional distance
+accumulation. Diagonal speed is capped to the configured speed. Horizontal
+scrolling is positive to the right; downward stick movement sends negative
+vertical wheel steps. Inversion reverses both wheel directions.
+
+`VirtualPointer` lazily creates a mouse-only uinput device with relative X/Y,
+vertical/horizontal wheels and left/right buttons. It attempts held-button
+release before destruction, including output errors. Dry-run integration must
+explicitly inject `NullPointer`; a CLI dry-run flag alone is not isolation.
+The pure backend fixtures mock every uinput syscall:
+
+```bash
+python3 -m unittest discover -s tests -p test_pointer.py -v
+```
+
+They exercise motion timing, dead zones, scrolling, saved-binding priority,
+activation guards, drag cleanup and Linux event packing without creating input
+devices. Physical pointer feel and actual compositor delivery need isolated
+integration and later device acceptance.
+
+
+The editor's **Pointer and scrolling** section keeps changes as a draft. Enable
+it, choose different pointer/scroll sticks (or None), adjust speed and dead-zone
+percentages, and set one controller token for each click. **Apply settings**
+saves the draft; **Reset edits** restores the last confirmed values. Existing
+additional click assignments are preserved. Saved controller shortcuts continue
+to override overlapping pointer buttons and stick directions.
+
+Changing fields does not enable output. Pointer controls require native mode
+switching and OS Mode; Game Mode shows an inactive summary. The editor explains
+when multiple connected controllers require a narrower selection or pointer
+output fails. It preserves unsaved settings across refreshes and serializes
+mode, binding and pointer writes. The isolated editor fixture checks those
+controls, Apply/Reset, error retention and simultaneous-write guards without
+starting a daemon or creating an input device.
+
+Overlap rows use the current face-button labels and skip disabled saved mappings.
+When the daemon reports an actual exclusive grab, the overlap message explains
+that physical events are owned by the plugin. Missing identities in Hyprland
+0.56.2 are counted rather than presented as an all-clear.
+
+The daemon’s `bindings` event includes saved `modes`; the form follows that
+snapshot, including edits made through another CLI/IPC client. Game capture is
+not gated by small stick drift. Strict physical centering protects acquisition
+of an exclusive grab; after acquisition, the OS output barrier waits for logical
+buttons to be released. Waiting reports include held input/axis values.
+Bindings-only edits apply settings in place without reopening pad descriptors or
+destroying the prepared keyboard. Fast retries run only while an enabled,
+unpaused OS controller is connected and waiting for a grab; config stat checks
+keep the normal rescan frequency. In native mode, disconnecting any participant
+resets the shared chord and requires all remaining pads to release held input.
+
+Default clicks use L2/R2 because the shipped A/B mappings already claim those
+recorded tokens. Saved mappings win; mouse-button reservations use recorded
+aliases, while raw stick reservations cover the corresponding whole stick.
+Idle neutral pointer settings do not request 60 Hz polling. Frame ticks run for
+active motion, fractional output or a pending nonblocking device settle. A zero
+dead zone still accepts the normalized one-count center quantization of a
+16-bit axis. Pointer-only edits retain controller and virtual mouse objects,
+and release failures are reported without terminating the input daemon.
+The `bindings` event includes canonical saved `pointer` settings, which keeps
+other CLI/client edits visible without separate getter processes.
+
+The `bindings` event also includes `profiles: {active, names}`; the editor uses
+that authoritative daemon snapshot and does not poll profile getters. Recording
+is blocked during queued binding or settings writes. Profile names allow joined
+emoji while rejecting control characters; `bindings: null` follows the existing
+legacy default-binding policy. This change also preserves unknown top-level
+config fields and rejects duplicate JSON keys, preventing ambiguous profile
+objects or forward-compatible fields from being silently discarded.
+
+Searchable picker popups reserve scroll space in the editor and size their
+result viewport to the window, including short windows. The installed shared
+UI control supplies search, result clipping and keyboard behavior.
 
 ## License
 

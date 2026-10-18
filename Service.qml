@@ -15,8 +15,7 @@ Item {
   property var shell: null
   property var manifest: null
 
-  readonly property string pluginDir: Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")
-  readonly property string cli: pluginDir + "bin/controller-control"
+  readonly property string cli: Qt.resolvedUrl("bin/controller-control").toString().replace(/^file:\/\//, "")
 
   // Linux signal numbers, for Process.signal().
   readonly property int sigHup: 1
@@ -30,10 +29,22 @@ Item {
   // Master switch, persisted in the config file. Not called `enabled`, which
   // would override Item's own property of that name.
   property bool switchedOn: true
+  property var savedProfiles: ({active:"Current", names:["Current"]})
+  property bool profilesLoaded: false
+  property var savedPointer: ({})
+  property var savedModes: ({enabled:false, active:"game"})
+  property string inputBlocker: ""
+  property bool modesEnabled: false
+  property string inputMode: "legacy"
+  property bool inputReady: false
+  property string inputStatus: "disconnected"
+  property string pointerStatus: "disabled"
+  property string activeProfile: "Current"
   // Transient mute, held only while the panel is recording a combo.
   property bool paused: false
   property string deviceName: ""
   property bool exclusive: false
+  property bool exclusiveActive: false
   property int bindingCount: 0
   property string lastError: ""
   readonly property bool enableBusy: enableProc.running
@@ -42,6 +53,8 @@ Item {
   // The full binding list, as the daemon last loaded it.
   property var bindings: []
   property string layout: "auto"
+  // Aliases are applied once by the input decoder.
+  property var deviceAliases: ({})
   // Tokens labelled differently under the current layout (Nintendo faces).
   property var labelOverrides: ({})
 
@@ -180,6 +193,7 @@ Item {
       return
     }
     if (!event || !event.event) return
+    if (event.active_profile !== undefined) root.activeProfile = String(event.active_profile)
 
     switch (event.event) {
     case "started":
@@ -190,9 +204,16 @@ Item {
       if (root._wantPaused) daemon.signal(root.sigUsr1)
       break
     case "state":
+      root.inputBlocker = String(event.input_blocker || "")
+      if (event.modes_enabled !== undefined) root.modesEnabled = event.modes_enabled === true
+      if (event.input_mode !== undefined) root.inputMode = String(event.input_mode)
+      if (event.input_ready !== undefined) root.inputReady = event.input_ready === true
+      if (event.input_status !== undefined) root.inputStatus = String(event.input_status)
+      if (event.pointer_status !== undefined) root.pointerStatus = String(event.pointer_status)
       root.connected = event.connected === true
       root.bindingCount = Number(event.bindings) || 0
       root.exclusive = event.exclusive === true
+      root.exclusiveActive = Array.isArray(event.devices) && event.devices.length > 0 && event.devices.every(function(d) { return d.grabbed === true })
       if (event.enabled !== undefined && !enableProc.running) root.switchedOn = event.enabled === true
       if (event.paused !== undefined) root.paused = event.paused === true
       if (Array.isArray(event.devices) && event.devices.length > 0)
@@ -208,7 +229,12 @@ Item {
       root.heldButtons = Array.isArray(event.held) ? event.held : []
       break
     case "bindings":
+      root.savedProfiles = event.profiles || ({active:"Current", names:["Current"]})
+      root.profilesLoaded = true
+      root.savedPointer = event.pointer || {}
+      root.savedModes = event.modes || ({enabled:false, active:"game"})
       root.bindings = Array.isArray(event.bindings) ? event.bindings : []
+      root.deviceAliases = event.aliases || {}
       root.layout = String(event.layout || "auto")
       root.labelOverrides = event.labels || {}
       break
@@ -235,6 +261,9 @@ Item {
     case "stopped":
       root.running = false
       root.ready = false
+      root.inputReady = false
+      root.inputStatus = "disconnected"
+      root.pointerStatus = "disconnected"
       break
     }
   }
@@ -260,6 +289,9 @@ Item {
       root.running = false
       root.ready = false
       root.connected = false
+      root.inputReady = false
+      root.inputStatus = "disconnected"
+      root.pointerStatus = "disconnected"
       root.heldButtons = []
       if (exitCode !== 0 && root.lastError === "")
         root.lastError = "daemon exited with code " + exitCode
@@ -276,6 +308,14 @@ Item {
         root._restartDelay = Math.min(root._restartDelay * 2, root.restartCeilingMs)
       }
       restartTimer.restart()
+    }
+  }
+
+  Process {
+    id: modeCommand
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim()) root.lastError = text.trim()
     }
   }
 
@@ -298,8 +338,36 @@ Item {
     onTriggered: root.start()
   }
 
+  // Bar access and IPC share one editor, draft and capture subscription.
+  readonly property var editor: editorLoader.item
+
+  function ensureEditor() {
+    editorLoader.active = true
+    return editorLoader.item
+  }
+
+  // Owned by the headless service so launchers do not require a bar widget.
+  Loader {
+    id: editorLoader
+    active: false
+    source: Qt.resolvedUrl("Panel.qml")
+    onLoaded: item.service = root
+  }
+
   IpcHandler {
     target: "controller"
+
+    function openWindow(): string {
+      var editor = root.ensureEditor()
+      if (!editor) return "editor unavailable"
+      editor.openWindow()
+      return "ok"
+    }
+
+    function closeWindow(): string {
+      if (editorLoader.item) editorLoader.item.closeWindow()
+      return "ok"
+    }
 
     function status(): string {
       return JSON.stringify({
@@ -307,6 +375,12 @@ Item {
         connected: root.connected,
         enabled: root.switchedOn,
         paused: root.paused,
+        modes_enabled: root.modesEnabled,
+        input_mode: root.inputMode,
+        input_ready: root.inputReady,
+        input_status: root.inputStatus,
+        pointer_status: root.pointerStatus,
+        active_profile: root.activeProfile,
         device: root.deviceName,
         bindings: root.bindingCount,
         exclusive: root.exclusive,
@@ -318,6 +392,15 @@ Item {
     function reload(): string {
       root.reload()
       return "ok"
+    }
+
+    function mode(selection: string): string {
+      if (["game", "os", "enable", "disable"].indexOf(selection) < 0) return "invalid mode"
+      if (modeCommand.running) return "mode change in progress"
+      if (root.capturing) root.cancelCapture()
+      modeCommand.command = [root.cli, "mode", selection]
+      modeCommand.running = true
+      return "requested"
     }
 
     function restart(): string {

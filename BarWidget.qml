@@ -37,18 +37,38 @@ BarWidget {
 
   // ---- panel plumbing, same shape the bar expects from any widget --------
 
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  readonly property var panel: service ? service.editor : null
+  readonly property bool opened: panel ? panel.opened === true && panel.hostWidget === root : false
 
-  function open() { if (panelLoader.item) panelLoader.item.open() }
-  function close() { if (panelLoader.item) panelLoader.item.close() }
-  function togglePanel() { if (panelLoader.item) panelLoader.item.toggle() }
+  function preparePanel() {
+    if (!service) return null
+    var target = service.ensureEditor()
+    // One editor serves every bar. If it is open on another monitor's bar,
+    // close it there before claiming it: a bar only lets go of a popup
+    // through its own open/close handoff, so re-pointing an open popup would
+    // leave both bars wrong about which popup is open.
+    if (target && target.opened && target.hostWidget && target.hostWidget !== root)
+      target.releasePopup()
+    injectPanel(true)
+    return target
+  }
 
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
-  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
+  function open() { var target = preparePanel(); if (target) target.open() }
+  function close() { if (panel && panel.hostWidget === root) panel.closePopup() }
+  function togglePanel() {
+    if (root.opened) root.close()
+    else root.open()
+  }
 
-  function injectPanel() {
-    var target = panelLoader.item
+  readonly property bool popoutSwitchClosing: panel ? panel.popoutSwitchClosing === true : false
+  // Only the widget showing the popup may close it for a popout switch, so a
+  // bar that no longer hosts it cannot take down another bar's popup.
+  function closeForPopoutSwitch() { if (panel && panel.hostWidget === root) panel.closeForPopoutSwitch() }
+
+  function injectPanel(claim) {
+    var target = root.panel
     if (!target) return
+    if (!claim && target.hostWidget && target.hostWidget !== root) return
     if ("bar" in target) target.bar = root.bar
     if ("settings" in target) target.settings = root.settings
     if ("anchorItem" in target) target.anchorItem = button
@@ -58,6 +78,16 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
+  onPanelChanged: injectPanel()
+  Component.onDestruction: {
+    if (panel && panel.hostWidget === root) {
+      if (panel.opened) panel.closePopup()
+      panel.anchorItem = null
+      panel.hostWidget = null
+      panel.bar = null
+      panel.settings = ({})
+    }
+  }
 
   Connections {
     target: root.service
@@ -78,17 +108,6 @@ BarWidget {
     id: flashTimer
     interval: 320
     onTriggered: root.flashing = false
-  }
-
-  Loader {
-    id: panelLoader
-    active: true
-    source: Qt.resolvedUrl("Panel.qml")
-    visible: false
-    onLoaded: {
-      root.injectPanel()
-      Qt.callLater(root.injectPanel)
-    }
   }
 
   // BarIconButton, not a bare WidgetButton: WidgetButton derives
