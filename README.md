@@ -409,7 +409,7 @@ blocked and acquisition retries automatically. Turning the master switch off
 releases OS grabs; re-enabling waits for neutral before taking ownership again.
 The separate transient capture pause can retain an existing OS grab.
 
-Startup, reconnect, configuration reload, pause/resume and input queue overflow
+Startup, reconnect, configuration/profile reload, pause/resume and input queue overflow
 reset pending chords and close virtual output. Held controls must return to
 neutral before actions resume. Snapshot failures keep output blocked. Sticks
 must return within 15% of center, triggers within 5% of rest, and hats/buttons
@@ -475,7 +475,7 @@ chord timing. Game Mode remains passthrough; selecting an OS profile while in
 Game Mode only changes which mappings will be ready when you return to OS Mode.
 
 The editor's **OS profile** selector chooses an existing profile. Enter a name
-and choose **Copy current** to keep a separate copy and select it, or **Rename
+and choose **Create profile** to keep a separate copy and select it, or **Rename
 current** to change its name. Finish or Clear a binding draft first, and Apply
 or Reset unsaved pointer settings. Game Mode shows a read-only passthrough
 summary with the remembered OS profile. Profile deletion is available through
@@ -510,13 +510,13 @@ Adding or removing a binding edits the active profile. Its `bindings` and
 }
 ```
 
-When present, top-level bindings and pointer settings take precedence for the
-active profile, so manual edits cannot be replaced by an older saved snapshot.
-Absent top-level fields fall back to that profile's snapshot. Use `profile use`
-to switch: manually changing only `profiles.active` leaves the existing top-level
-settings authoritative. All inactive profiles are validated too. Older versions
-can read the active mappings, but an older writer that removes unknown fields
-can discard profile metadata; keep a backup when switching versions.
+Top-level bindings and pointer settings remain compatibility mirrors of the
+active profile. Saved files record `profiles.mirror_of` to identify their owner.
+Changing only `profiles.active` is rejected if that owner differs, and old files
+without ownership are rejected when the mirrors disagree with the selected
+snapshot. This prevents another profile from being overwritten on the next save.
+Use `controller-control profile use NAME` to switch atomically. All inactive
+profiles are validated too.
 
 ## How chords are resolved
 
@@ -595,6 +595,8 @@ python3 -m unittest discover -s tests -p test_combos.py -v
 python3 -m unittest discover -s tests -p test_config.py -v
 python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
+python3 -m unittest discover -s tests -p test_profile_integration.py -v
+python3 -m unittest discover -s tests -p test_profiles.py -v
 python3 -m unittest discover -s tests -p test_pointer_integration.py -v
 python3 -m unittest discover -s tests -p test_native_modes.py -v
 python3 -m unittest discover -s tests -p test_catalog.py -v
@@ -645,7 +647,7 @@ values in -1..1; `held` contains the current aliased button tokens.
 capture/pause policy. Game Mode passes `allowed=False`, which releases drags,
 clears fractional motion and releases dragging. The prepared mouse is retained
 across ordinary transitions and destroyed on shutdown or output failure.
-Call `reset()` after changing device, aliases or pointer settings.
+Call `reset()` after changing device, aliases, profiles or pointer settings.
 Activation ignores buttons already held until release and requires each stick
 to return within its dead zone. This prevents clicks and jumps during a mode
 change. A scheduling stall contributes at most 50 milliseconds of motion.
@@ -727,6 +729,14 @@ dead zone still accepts the normalized one-count center quantization of a
 and release failures are reported without terminating the input daemon.
 The `bindings` event includes canonical saved `pointer` settings, which keeps
 other CLI/client edits visible without separate getter processes.
+
+The `bindings` event also includes `profiles: {active, names}`; the editor uses
+that authoritative daemon snapshot and does not poll profile getters. Recording
+is blocked during queued binding or settings writes. Profile names allow joined
+emoji while rejecting control characters; `bindings: null` follows the existing
+legacy default-binding policy. This change also preserves unknown top-level
+config fields and rejects duplicate JSON keys, preventing ambiguous profile
+objects or forward-compatible fields from being silently discarded.
 
 Searchable picker popups reserve scroll space in the editor and size their
 result viewport to the window, including short windows. The installed shared
