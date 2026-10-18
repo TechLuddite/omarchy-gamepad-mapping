@@ -17,11 +17,14 @@ FocusScope {
   signal windowRequested()
   signal switchRequested(int direction)
   signal focusRequested(var item)
+  readonly property Item navigationItem: keyCatcher
+  readonly property Item cursorRow: bindingRepeater.itemAt(cursorIndex)
+  readonly property Item focusScrollTarget: focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
   readonly property Item focusedControl: Window.window ? Window.window.activeFocusItem : null
   onFocusedControlChanged: {
     for (var item = focusedControl; item && item !== root; item = item.parent) {
       if (item.parent === root) {
-        root.focusRequested(focusedControl)
+        root.focusRequested(root.focusScrollTarget)
         break
       }
     }
@@ -156,6 +159,19 @@ FocusScope {
   }
 
   onBindingsChanged: if (cursorIndex >= bindings.length) cursorIndex = bindings.length - 1
+  onCursorIndexChanged: Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) })
+
+  function focusControl(direction) {
+    var first = root.focusedControl || keyCatcher
+    var next = first.nextItemInFocusChain(direction > 0)
+    while (next && next !== first) {
+      if (next.visible && next.enabled && next.activeFocusOnTab) {
+        next.forceActiveFocus(direction > 0 ? Qt.TabFocusReason : Qt.BacktabFocusReason)
+        return
+      }
+      next = next.nextItemInFocusChain(direction > 0)
+    }
+  }
 
   Connections {
     target: root.service
@@ -212,12 +228,12 @@ FocusScope {
     id: keyCatcher
     anchors.fill: parent
     // Text fields and focused buttons keep their normal editing/Tab keys.
-    blocked: root.fieldFocused || (root.focusedControl !== root && root.focusedControl !== keyCatcher)
+    blocked: root.fieldFocused
     onMoveRequested: function (dx, dy) { if (dy !== 0) root.moveCursor(dy) }
     onActivateRequested: root.activateCursor()
     onDeleteRequested: root.deleteAtCursor()
     onTabRequested: function (direction) {
-      if (root.windowMode) actionField.forceActiveFocus()
+      if (root.windowMode) root.focusControl(direction)
       else root.switchRequested(direction)
     }
     onCloseRequested: {
@@ -248,14 +264,14 @@ FocusScope {
       Button {
         visible: !root.windowMode
         text: "Open window"
-        focusable: true
+        focusable: root.windowMode
         bordered: true
         foreground: root.foreground
         onClicked: root.windowRequested()
       }
       Button {
         text: "Close"
-        focusable: true
+        focusable: root.windowMode
         bordered: true
         foreground: root.foreground
         onClicked: root.closeRequested()
@@ -522,7 +538,7 @@ FocusScope {
 
       Button {
 
-        focusable: true
+        focusable: root.windowMode
         text: root.capturing
           ? "Waiting…"
           : (root.draftCombo.length > 0
@@ -538,7 +554,7 @@ FocusScope {
 
       Button {
 
-        focusable: true
+        focusable: root.windowMode
         text: root.draftIsCommand ? "Command" : "Keys"
         tooltipText: root.draftIsCommand
           ? "Runs a shell command"
@@ -552,7 +568,7 @@ FocusScope {
 
       Button {
 
-        focusable: true
+        focusable: root.windowMode
         text: "Repeat"
         tooltipText: "Fire again while held, for volume and brightness"
         selected: root.draftRepeat
@@ -566,7 +582,7 @@ FocusScope {
 
       Button {
 
-        focusable: true
+        focusable: root.windowMode
         text: "Hold"
         tooltipText: "Only fire after a long press, for anything destructive"
         selected: root.draftHold
@@ -611,7 +627,7 @@ FocusScope {
 
       Button {
 
-        focusable: true
+        focusable: root.windowMode
         text: root.draftExisting ? "3. Save changes" : "3. Save binding"
         enabled: root.draftReady
         bordered: true
@@ -623,7 +639,7 @@ FocusScope {
 
       Button {
 
-        focusable: true
+        focusable: root.windowMode
         text: "Clear"
         bordered: true
         foreground: root.foreground

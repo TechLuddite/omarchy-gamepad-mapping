@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Quickshell
+import Quickshell.Io
 import QtTest
 import qs.Commons
 import qs.Commons as Commons
@@ -39,6 +40,21 @@ ShellRoot {
     active: false
     sourceComponent: Component { BarWidget { bar: fakeBar } }
   }
+  Loader {
+    id: otherWidget
+    active: false
+    sourceComponent: Component { BarWidget { bar: fakeBar } }
+  }
+  Process {
+    id: ipcClose
+    property string method: "closeWindow"
+    command: ["quickshell", "ipc", "-p", Quickshell.env("CONTROLLER_EDITOR_FIXTURE_PATH"), "--any-display", "call", "controller", ipcClose.method]
+    property string reply: ""
+    stdout: StdioCollector { onStreamFinished: ipcClose.reply = text }
+    stderr: StdioCollector { onStreamFinished: ipcClose.reply += text }
+    property int code: -1
+    onExited: function(exitCode) { code = exitCode }
+  }
   TestCase { id: keys; when: false }
   Timer {
     interval: 120
@@ -50,6 +66,7 @@ ShellRoot {
     property var editor: null
     property var action: null
     property var description: null
+    property real savedScroll: 0
     function check(ok, message) { if (!ok) throw new Error(message) }
     function find(item, predicate) {
       if (predicate(item)) return item
@@ -197,6 +214,63 @@ ShellRoot {
           check(editor.statusMessage === "", "A later successful edit recovers")
           check(fake.reloads === 0 && editor.bindings === fake.bindings, "Daemon owns the binding snapshot and reload policy")
           panel.close()
+          panel.openWindow()
+          editor.clearDraft()
+        } else if (stage === 12) {
+          var record = find(editor, function(item) { return item.text === "1. Record combo" })
+          check(record !== null && record.focusable, "Window buttons are focusable")
+          record.forceActiveFocus()
+          record.clicked()
+          keys.keyClick(Qt.Key_Escape)
+          check(!fake.capturing && panel.windowOpened, "Escape from a focused button cancels capture")
+          keys.keyClick(Qt.Key_R)
+          check(fake.capturing, "Record shortcut still works after clicking a button")
+          keys.keyClick(Qt.Key_Escape)
+          action.forceActiveFocus()
+          keys.keyClick(Qt.Key_Backtab, Qt.ShiftModifier)
+          check(!action.activeFocus, "Shift+Tab traverses backwards")
+          keys.keyClick(Qt.Key_Tab)
+          check(action.activeFocus, "Tab returns to the action field")
+          editor.focusNavigation()
+          editor.cursorIndex = -1
+          var scroll = editor.parent.parent
+          scroll.contentY = Math.min(160, scroll.contentHeight - scroll.height)
+          savedScroll = scroll.contentY
+          fake.lastError = "Resize without moving navigation focus"
+        } else if (stage === 13) {
+          var scroll = editor.parent.parent
+          check(savedScroll > 0 && Math.abs(scroll.contentY - savedScroll) < 2, "Content resize does not jump to the full-height key catcher")
+          editor.beginCapture()
+          widget.togglePanel()
+          check(panel.opened && !panel.windowOpened && fake.capturing, "Bar click hands the window into the popup without cancelling capture")
+          var owner = panel.hostWidget
+          var anchor = panel.anchorItem
+          otherWidget.active = true
+          otherWidget.item.settings = {hideWhenDisconnected: false}
+          check(panel.hostWidget === owner && panel.anchorItem === anchor && !otherWidget.item.opened, "Passive second widget cannot steal an open popup")
+          ipcClose.code = -1
+          ipcClose.running = true
+        } else if (stage === 14) {
+          if (ipcClose.running || ipcClose.code < 0) return
+          check(ipcClose.code === 0 && panel.opened && fake.capturing, "Real closeWindow IPC leaves a popup and recording alone: " + ipcClose.code + " / " + ipcClose.reply + " / " + panel.opened + " / " + fake.capturing)
+          otherWidget.item.open()
+          check(panel.hostWidget === otherWidget.item && otherWidget.item.opened && !widget.opened, "Explicit second-widget open transfers ownership")
+          panel.openWindow()
+          ipcClose.code = -1
+          ipcClose.running = true
+        } else if (stage === 15) {
+          if (ipcClose.running || ipcClose.code < 0) return
+          check(ipcClose.code === 0 && !panel.windowOpened && !fake.capturing, "Real closeWindow IPC closes just the window and cancels recording")
+          ipcClose.method = "openWindow"
+          ipcClose.code = -1
+          ipcClose.running = true
+        } else if (stage === 16) {
+          if (ipcClose.running || ipcClose.code < 0) return
+          check(ipcClose.code === 0 && panel.windowOpened && !panel.opened, "Real openWindow IPC opens the ordinary window")
+          editor.beginCapture()
+          editor.Window.window.close()
+        } else if (stage === 17) {
+          check(!panel.windowOpened && !fake.capturing, "Window close event releases capture")
           console.log("EDITOR CHECK PASS")
           Qt.quit()
         }

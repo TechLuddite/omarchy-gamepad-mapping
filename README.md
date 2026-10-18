@@ -134,7 +134,7 @@ omarchy-shell controller closeWindow
 The service lazily owns one editor shared by the popup and window. Switching
 views preserves the draft and active recording; closing cancels recording.
 The window also works without a bar widget. Focused fields and buttons scroll
-into view in a short window. Tab moves between controls; Esc leaves a text
+into view in a short window. Tab moves between controls in the window; popup Tab switches bar panels. Esc leaves a text
 field, cancels recording, then closes, one step at a time. Disabling mapping
 leaves the editor usable.
 
@@ -388,7 +388,8 @@ invisible until it does damage.
 omarchy-shell (Quickshell)
 ├── Service.qml      runs the daemon, parses its JSON event stream, IPC
 ├── BarWidget.qml    connection glyph, pulses on fire
-└── Panel.qml        bindings editor with press-to-record capture
+├── Panel.qml        popup/window ownership
+└── EditorContent.qml shared bindings editor with press-to-record capture
         │
         └── bin/controller-control daemon
                 └── engine/   pure-stdlib evdev reader + chord recogniser

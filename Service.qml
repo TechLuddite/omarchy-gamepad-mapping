@@ -15,7 +15,6 @@ Item {
   property var shell: null
   property var manifest: null
 
-  readonly property string pluginDir: Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")
   readonly property string cli: Qt.resolvedUrl("bin/controller-control").toString().replace(/^file:\/\//, "")
 
   // Linux signal numbers, for Process.signal().
@@ -325,7 +324,7 @@ Item {
     }
 
     function closeWindow(): string {
-      if (editorLoader.item) editorLoader.item.close()
+      if (editorLoader.item) editorLoader.item.closeWindow()
       return "ok"
     }
 

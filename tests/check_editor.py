@@ -43,6 +43,7 @@ if sys.argv[1:3] == ['bind', 'Z']:
         stub.write_text('#!/bin/sh\nprintf \'%s\\n\' \'%s\'\n' % ('%s', response))
         stub.chmod(0o700)
     env = os.environ.copy()
+    env['CONTROLLER_EDITOR_FIXTURE_PATH'] = str(root / 'shell.qml')
     env.update(PATH=str(root / 'bin') + os.pathsep + env.get('PATH', ''), HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'config'),
                XDG_STATE_HOME=str(root / 'state'), XDG_CACHE_HOME=str(root / 'cache'),
                XDG_RUNTIME_DIR=str(root / 'runtime'), DBUS_SESSION_BUS_ADDRESS='unix:path=/nonexistent',

@@ -36,12 +36,12 @@ Panel {
   }
 
   function cancelCaptureIfActive() {
-    if (service && service.capturing) service.cancelCapture()
+    if (service) service.cancelCapture()
   }
 
   function ensureVisible(item) {
     var scroll = editorWindow.visible ? windowScroll : popupScroll
-    if (!item || item === editor || scroll.height <= 0) return
+    if (!item || item === editor || item === editor.navigationItem || scroll.height <= 0) return
     var ancestor = item.parent
     while (ancestor && ancestor !== editor) ancestor = ancestor.parent
     if (ancestor !== editor) return
@@ -57,10 +57,20 @@ Panel {
   }
 
   function revealFocus() {
-    Qt.callLater(function() { root.ensureVisible(editor.focusedControl) })
+    Qt.callLater(function() { root.ensureVisible(editor.focusScrollTarget) })
   }
 
-  function toggle() { root.opened || root.windowOpened ? root.close() : root.open() }
+  function closePopup() {
+    root.controller.hide()
+    if (!root.windowOpened) cancelCaptureIfActive()
+  }
+
+  function closeWindow() {
+    editorWindow.visible = false
+    if (!root.opened) cancelCaptureIfActive()
+  }
+
+  function toggle() { root.opened ? root.closePopup() : root.open() }
 
   // Also release capture when the bar coordinator closes the popup or the
   // compositor closes the window, rather than only through our Close button.

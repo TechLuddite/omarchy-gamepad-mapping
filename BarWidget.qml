@@ -38,25 +38,29 @@ BarWidget {
   // ---- panel plumbing, same shape the bar expects from any widget --------
 
   readonly property var panel: service ? service.editor : null
-  readonly property bool opened: panel ? panel.opened === true : false
+  readonly property bool opened: panel ? panel.opened === true && panel.hostWidget === root : false
 
   function preparePanel() {
     if (!service) return null
     var target = service.ensureEditor()
-    injectPanel()
+    injectPanel(true)
     return target
   }
 
   function open() { var target = preparePanel(); if (target) target.open() }
-  function close() { if (panel) panel.close() }
-  function togglePanel() { var target = preparePanel(); if (target) target.toggle() }
+  function close() { if (panel && panel.hostWidget === root) panel.closePopup() }
+  function togglePanel() {
+    if (root.opened) root.close()
+    else root.open()
+  }
 
   readonly property bool popoutSwitchClosing: panel ? panel.popoutSwitchClosing === true : false
   function closeForPopoutSwitch() { if (panel) panel.closeForPopoutSwitch() }
 
-  function injectPanel() {
+  function injectPanel(claim) {
     var target = root.panel
     if (!target) return
+    if (!claim && target.hostWidget && target.hostWidget !== root) return
     if ("bar" in target) target.bar = root.bar
     if ("settings" in target) target.settings = root.settings
     if ("anchorItem" in target) target.anchorItem = button
@@ -69,7 +73,7 @@ BarWidget {
   onPanelChanged: injectPanel()
   Component.onDestruction: {
     if (panel && panel.hostWidget === root) {
-      if (panel.opened) panel.close()
+      if (panel.opened) panel.closePopup()
       panel.anchorItem = null
       panel.hostWidget = null
       panel.bar = null
