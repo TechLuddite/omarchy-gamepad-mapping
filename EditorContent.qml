@@ -19,7 +19,7 @@ FocusScope {
   signal focusRequested(var item)
   readonly property Item navigationItem: keyCatcher
   readonly property Item cursorRow: bindingRepeater.itemAt(cursorIndex)
-  readonly property Item focusScrollTarget: keyboardPicker.popupOpen ? keyboardPickerExtent : shortcutPicker.popupOpen ? shortcutPickerExtent : focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
+  readonly property Item focusScrollTarget: profilePicker.popupOpen ? profilePickerExtent : keyboardPicker.popupOpen ? keyboardPickerExtent : shortcutPicker.popupOpen ? shortcutPickerExtent : focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
   readonly property Item focusedControl: Window.window ? Window.window.activeFocusItem : null
   onFocusedControlChanged: {
     for (var item = focusedControl; item && item !== root; item = item.parent) {
@@ -839,6 +839,11 @@ FocusScope {
 
       SearchableDropdown {
         id: profilePicker
+        onPopupOpenChanged: if (popupOpen) Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) })
+        Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
+        popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
+        popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
+        Item { id: profilePickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
         objectName: "osProfilePicker"
         Layout.fillWidth: true
         showLabel: false
@@ -1587,7 +1592,7 @@ FocusScope {
 
     TextField {
       id: actionField
-        onTextChanged: root.cancelProfileDelete()
+      onTextChanged: root.cancelProfileDelete()
       Layout.fillWidth: true
       foreground: root.foreground
       text: root.draftAction
@@ -1602,7 +1607,7 @@ FocusScope {
 
     TextField {
       id: descriptionField
-        onTextChanged: root.cancelProfileDelete()
+      onTextChanged: root.cancelProfileDelete()
       Layout.fillWidth: true
       foreground: root.foreground
       text: root.draftDescription
