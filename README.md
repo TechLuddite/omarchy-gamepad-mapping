@@ -409,7 +409,7 @@ blocked and acquisition retries automatically. Turning the master switch off
 releases OS grabs; re-enabling waits for neutral before taking ownership again.
 The separate transient capture pause can retain an existing OS grab.
 
-Startup, reconnect, config/profile reload, pause/resume and input queue overflow
+Startup, reconnect, configuration reload, pause/resume and input queue overflow
 reset pending chords and close virtual output. Held controls must return to
 neutral before actions resume. Snapshot failures keep output blocked. Sticks
 must return within 15% of center, triggers within 5% of rest, and hats/buttons
@@ -542,6 +542,7 @@ python3 -m unittest discover -s tests -p test_combos.py -v
 python3 -m unittest discover -s tests -p test_config.py -v
 python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
+python3 -m unittest discover -s tests -p test_native_modes.py -v
 python3 -m unittest discover -s tests -p test_catalog.py -v
 python3 -m unittest discover -s tests -p test_keyboard_catalog.py -v
 python3 -m unittest discover -s tests -p test_conflicts.py -v
@@ -580,6 +581,17 @@ Overlap rows use the current face-button labels and skip disabled saved mappings
 When the daemon reports an actual exclusive grab, the overlap message explains
 that physical events are owned by the plugin. Missing identities in Hyprland
 0.56.2 are counted rather than presented as an all-clear.
+
+The daemon’s `bindings` event includes saved `modes`; the form follows that
+snapshot, including edits made through another CLI/IPC client. Game capture is
+not gated by small stick drift. Strict physical centering protects acquisition
+of an exclusive grab; after acquisition, the OS output barrier waits for logical
+buttons to be released. Waiting reports include held input/axis values.
+Bindings-only edits apply settings in place without reopening pad descriptors or
+destroying the prepared keyboard. Fast retries run only while an enabled,
+unpaused OS controller is connected and waiting for a grab; config stat checks
+keep the normal rescan frequency. In native mode, disconnecting any participant
+resets the shared chord and requires all remaining pads to release held input.
 
 Searchable picker popups reserve scroll space in the editor and size their
 result viewport to the window, including short windows. The installed shared
