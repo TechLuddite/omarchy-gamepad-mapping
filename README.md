@@ -414,7 +414,9 @@ reset pending chords and close virtual output. Held controls must return to
 neutral before actions resume. Snapshot failures keep output blocked. Sticks
 must return within 15% of center, triggers within 5% of rest, and hats/buttons
 to rest. Current keys are read through `EVIOCGKEY` and axis ranges/values are
-queried again; cached hotplug metadata cannot establish neutral state.
+queried again; cached hotplug metadata cannot establish neutral state. Those
+strict axis thresholds protect grab acquisition only. Once grabbed, logical
+button release gates output so sub-threshold drift does not mute controls.
 `SYN_DROPPED` discards history through the next `SYN_REPORT` before a fresh
 snapshot. With multiple controllers, a shared neutral barrier and reference
 counting prevent one controller's release from clearing another's held token.
