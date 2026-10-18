@@ -356,24 +356,29 @@ only genuinely new nodes are opened.
 
 ## Tests
 
+Parser, Back identity/config and chord checks do not open input devices:
+
+```bash
+python3 -m unittest discover -s tests -p test_key_aliases.py -v
+python3 -m unittest discover -s tests -p test_back_button.py -v
+python3 -m unittest discover -s tests -p test_combos.py -v
+```
+
 The end-to-end tests create real virtual controllers visible to other
-applications. Run them in an environment whose input devices cannot reach
-your desktop applications. The daemon's `--dry-run` suppresses mapped output
-actions only; it does not isolate the synthetic controller's input.
+applications. Run them only where generated input cannot reach desktop
+applications. The daemon's `--dry-run` suppresses mapped output actions only;
+it does not isolate the synthetic controller's input.
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-54 tests, no dependencies. The end-to-end suite fabricates a synthetic gamepad
-over uinput and drives the real daemon process against it, so chord
-resolution, hotplug, disconnect, repeat, and hold are all covered without
-touching real hardware.
-Dedicated Back coverage includes legacy binding save/reload, independent
-actions and chords, and a second evdev reader on a nonexclusive device.
-The tests need write access to `/dev/uinput` and read access to the generated
-`/dev/input/event*` nodes (for example, membership in the `input` group).
-The dedicated Back fixture can be classified as a mouse, so access granted
+The end-to-end suite drives the real daemon with synthetic gamepads to cover
+chords, hotplug, disconnect, repeat and hold. Dedicated Back coverage includes
+legacy binding save/reload, independent actions/chords, and a second evdev reader
+on a nonexclusive device. These fixtures need write access to `/dev/uinput` and
+read access to generated `/dev/input/event*` nodes (for example, membership in
+`input`). The dedicated Back fixture can be classified as a mouse; access granted
 only to joystick devices is insufficient.
 
 ## License
