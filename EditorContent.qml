@@ -19,7 +19,7 @@ FocusScope {
   signal focusRequested(var item)
   readonly property Item navigationItem: keyCatcher
   readonly property Item cursorRow: bindingRepeater.itemAt(cursorIndex)
-  readonly property Item focusScrollTarget: shortcutPicker.popupOpen ? shortcutPickerExtent : focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
+  readonly property Item focusScrollTarget: keyboardPicker.popupOpen ? keyboardPickerExtent : shortcutPicker.popupOpen ? shortcutPickerExtent : focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
   readonly property Item focusedControl: Window.window ? Window.window.activeFocusItem : null
   onFocusedControlChanged: {
     for (var item = focusedControl; item && item !== root; item = item.parent) {
@@ -732,7 +732,11 @@ FocusScope {
 
     SearchableDropdown {
       id: keyboardPicker
-      onPopupOpenChanged: if (popupOpen) root.loadKeyboard()
+      onPopupOpenChanged: if (popupOpen) { root.loadKeyboard(); Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) }) }
+      Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
+      popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
+      popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
+      Item { id: keyboardPickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
       Layout.fillWidth: true
       visible: !root.draftIsCommand
       label: "STANDARD KEY (OPTIONAL)"

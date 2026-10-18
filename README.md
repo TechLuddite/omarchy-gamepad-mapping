@@ -169,6 +169,8 @@ keys. Search by a friendly name or the canonical token. Selection fills the
 editable Keys field with one key; add modifiers there to build a custom chord.
 The description stays editable, and Command entry remains available. This
 catalog works without Hyprland and uses the same shared searchable UI control.
+It loads once when opened and is hidden in Command mode. Letters and punctuation use physical positions named for US layouts; for example,
+A may produce q on AZERTY. Picking a key after a trailing + retains typed modifiers.
 
 Everything is also available from the CLI:
 
@@ -489,6 +491,7 @@ generated `/dev/input/event*` nodes (for example, membership in `input`). The
 dedicated Back fixture can be classified as a mouse; access granted
 only to joystick devices is insufficient.
 
+
 Searchable picker popups reserve scroll space in the editor and size their
 result viewport to the window, including short windows. The installed shared
 UI control supplies search, result clipping and keyboard behavior.
@@ -496,6 +499,3 @@ UI control supplies search, result clipping and keyboard behavior.
 ## License
 
 MIT
-
-Letters and punctuation use physical positions named for US layouts; for example,
-A may produce q on AZERTY. Picking a key after a trailing + retains typed modifiers.

@@ -44,13 +44,13 @@ class KeyboardCatalogTests(unittest.TestCase):
         self.assertEqual(len(json.loads(out.getvalue())), 119)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class FriendlySearchTests(unittest.TestCase):
     def test_common_spaced_names_and_aliases_are_searchable(self):
         rows = keyboard_catalog()
         for term, expected in [('page up','PAGEUP'),('caps lock','CAPSLOCK'),('keypad 5','KP5'),('backtick','GRAVE'),('tilde','GRAVE'),('plus','EQUAL'),('BRACKETLEFT','LEFTBRACE'),('PGUP','PAGEUP'),('PRINT','SYSRQ')]:
             matches = [r['keys'] for r in rows if term.lower() in (r['label']+' '+r['description']).lower()]
             self.assertIn(expected,matches,term)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -109,6 +109,11 @@ ShellRoot {
           editor.loadShortcuts()
           editor.loadKeyboard()
         } else if (stage === 1) {
+          if (!editor.keyboardOptions.length) {
+            check(editor.keyboardMessage.indexOf("unavailable") >= 0, "Failed standard catalog keeps manual input available")
+            editor.loadKeyboard()
+            return
+          }
           check(panel.windowOpened && !panel.opened, "Window opens independently of bar")
           widgetLoader.active = true
           check(widget.panel === panel && !widget.opened, "A later bar adopts the same service editor")
@@ -135,6 +140,9 @@ ShellRoot {
           check(editor.keyboardOptions.length === 119, "Fake standard keys loaded")
           var keyboardPicker = find(editor, function(item) { return item.label === "STANDARD KEY (OPTIONAL)" })
           check(keyboardPicker !== null, "Shared searchable key picker exists")
+          editor.draftIsCommand = true
+          check(!keyboardPicker.visible, "Standard key picker is hidden in Command mode")
+          editor.draftIsCommand = false
           keyboardPicker.changed("ENTER")
           check(action.text === "ENTER" && description.text === "My description", "Standard key fills editable input and preserves custom description")
           editor.draftDescription = ""

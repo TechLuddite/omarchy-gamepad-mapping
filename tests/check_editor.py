@@ -46,6 +46,11 @@ if sys.argv[1:] == ['shortcuts']:
     print(CATALOG_RESPONSE)
     raise SystemExit(0)
 if sys.argv[1:] == ['keyboard-keys']:
+    marker = Path(os.environ['HOME']) / 'keyboard-read'
+    if not marker.exists():
+        marker.touch()
+        print('unavailable')
+        raise SystemExit(1)
     print(KEYBOARD_RESPONSE)
     raise SystemExit(0)
 if sys.argv[1] not in ('bind', 'unbind'):
