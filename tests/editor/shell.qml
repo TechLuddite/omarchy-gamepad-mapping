@@ -110,6 +110,7 @@ ShellRoot {
           editor.loadKeyboard()
         } else if (stage === 1) {
           if (!editor.keyboardOptions.length) {
+            if (!editor.keyboardMessage) return
             check(editor.keyboardMessage.indexOf("unavailable") >= 0, "Failed standard catalog keeps manual input available")
             editor.loadKeyboard()
             return
