@@ -284,6 +284,8 @@ ShellRoot {
         } else if (stage === 17) {
           if (compositorClose.running) return
           check(!panel.windowOpened && !fake.capturing, "Window close event releases capture")
+          panel.openWindow()
+          check(panel.windowOpened, "Editor can reopen after a native window close")
           console.log("EDITOR CHECK PASS")
           Qt.quit()
         }

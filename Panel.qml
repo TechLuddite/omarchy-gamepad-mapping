@@ -25,6 +25,8 @@ Panel {
   }
 
   function openWindow() {
+    // A native close can leave the requested visibility true internally.
+    if (!editorWindow.visible) editorWindow.visible = false
     editorWindow.visible = true
     root.controller.hide()
     Qt.callLater(function() { if (editorWindow.visible) editor.forceActiveFocus() })
