@@ -43,6 +43,12 @@ BarWidget {
   function preparePanel() {
     if (!service) return null
     var target = service.ensureEditor()
+    // One editor serves every bar. If it is open on another monitor's bar,
+    // close it there before claiming it: a bar only lets go of a popup
+    // through its own open/close handoff, so re-pointing an open popup would
+    // leave both bars wrong about which popup is open.
+    if (target && target.opened && target.hostWidget && target.hostWidget !== root)
+      target.releasePopup()
     injectPanel(true)
     return target
   }
@@ -55,7 +61,9 @@ BarWidget {
   }
 
   readonly property bool popoutSwitchClosing: panel ? panel.popoutSwitchClosing === true : false
-  function closeForPopoutSwitch() { if (panel) panel.closeForPopoutSwitch() }
+  // Only the widget showing the popup may close it for a popout switch, so a
+  // bar that no longer hosts it cannot take down another bar's popup.
+  function closeForPopoutSwitch() { if (panel && panel.hostWidget === root) panel.closeForPopoutSwitch() }
 
   function injectPanel(claim) {
     var target = root.panel

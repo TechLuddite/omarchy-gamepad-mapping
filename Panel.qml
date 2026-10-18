@@ -18,6 +18,9 @@ Panel {
   readonly property var barIdentity: hostWidget || root
   readonly property Item form: editor
   readonly property bool windowOpened: editorWindow.visible
+  // Set while the popup moves to another bar, so closing it on the old one
+  // does not also end a recording.
+  property bool handingOff: false
 
   function open() {
     root.controller.show()
@@ -68,6 +71,22 @@ Panel {
     if (!root.windowOpened) cancelCaptureIfActive()
   }
 
+  // Close the popup on its current bar so another bar can take it over,
+  // leaving a recording running.
+  function releasePopup() {
+    root.handingOff = true
+    root.controller.hide()
+    root.handingOff = false
+  }
+
+  // The bar closes us when another of its popups opens. That should take
+  // down only the popup, not a window the editor has moved into.
+  function closeForPopoutSwitch() {
+    root.popoutSwitchClosing = true
+    root.closePopup()
+    Qt.callLater(function() { root.popoutSwitchClosing = false })
+  }
+
   function closeWindow() {
     editorWindow.visible = false
     if (!root.opened) cancelCaptureIfActive()
@@ -77,7 +96,7 @@ Panel {
 
   // Also release capture when the bar coordinator closes the popup or the
   // compositor closes the window, rather than only through our Close button.
-  onOpenedChanged: if (!opened && !windowOpened) cancelCaptureIfActive()
+  onOpenedChanged: if (!opened && !windowOpened && !handingOff) cancelCaptureIfActive()
   Component.onDestruction: cancelCaptureIfActive()
 
   EditorContent {

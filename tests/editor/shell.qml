@@ -24,8 +24,7 @@ ShellRoot {
     function reload() { reloads++ }
     onCapturingChanged: if (!capturing) cancels++
   }
-  QtObject {
-    id: fakeBar
+  component FakeBar: QtObject {
     property QtObject shell: QtObject {
       function serviceFor(id) { return fake }
     }
@@ -38,10 +37,18 @@ ShellRoot {
     property string fontFamily: "monospace"
     property bool foregroundAnimationEnabled: false
     property var activePopout: false
-    function requestPopout(owner) { activePopout = owner }
+    // Like the shell's bar: one popout at a time, closing the previous one.
+    function requestPopout(owner) {
+      if (activePopout === owner) return
+      if (activePopout && "closeForPopoutSwitch" in activePopout) activePopout.closeForPopoutSwitch()
+      activePopout = owner
+    }
     function releasePopout(owner) { if (activePopout === owner) activePopout = false }
     function hideTooltip(item) {}
   }
+  FakeBar { id: fakeBar }
+  // A second monitor's bar.
+  FakeBar { id: fakeBar2 }
   Loader {
     id: widgetLoader
     active: false
@@ -50,7 +57,7 @@ ShellRoot {
   Loader {
     id: otherWidget
     active: false
-    sourceComponent: Component { BarWidget { bar: fakeBar } }
+    sourceComponent: Component { BarWidget { bar: fakeBar2 } }
   }
   Process {
     id: ipcClose
@@ -387,8 +394,13 @@ ShellRoot {
         } else if (stage === 14) {
           if (ipcClose.running || ipcClose.code < 0) return
           check(ipcClose.code === 0 && panel.opened && fake.capturing, "Real closeWindow IPC leaves a popup and recording alone: " + ipcClose.code + " / " + ipcClose.reply + " / " + panel.opened + " / " + fake.capturing)
+          check(fakeBar.activePopout === widget && fakeBar2.activePopout === false, "The open popup is registered with its own bar")
           otherWidget.item.open()
           check(panel.hostWidget === otherWidget.item && otherWidget.item.opened && !widget.opened, "Explicit second-widget open transfers ownership")
+          check(fakeBar.activePopout === false && fakeBar2.activePopout === otherWidget.item, "Moving the popup to another bar releases the old bar and claims the new one")
+          check(panel.opened && fake.capturing, "Moving the popup between bars keeps it open and keeps recording")
+          widget.closeForPopoutSwitch()
+          check(panel.opened && fake.capturing, "A bar that no longer hosts the popup cannot close it")
           panel.openWindow()
           ipcClose.code = -1
           ipcClose.running = true
