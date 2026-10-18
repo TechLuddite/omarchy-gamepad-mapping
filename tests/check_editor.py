@@ -33,6 +33,9 @@ import json, os, sys
 from pathlib import Path
 with (Path(os.environ['HOME']) / 'calls.jsonl').open('a') as stream:
     stream.write(json.dumps(sys.argv[1:]) + '\\n')
+if sys.argv[1:] == ['shortcuts']:
+    print(json.dumps([{'value': 'SUPER+RETURN', 'keys': 'SUPER+RETURN', 'label': 'Terminal · SUPER+RETURN', 'description': 'Terminal'}]))
+    raise SystemExit(0)
 if sys.argv[1] not in ('bind', 'unbind'):
     raise SystemExit('Unexpected CLI command')
 if sys.argv[1:3] == ['bind', 'Z']:
@@ -65,6 +68,8 @@ if sys.argv[1:3] == ['bind', 'Z']:
     calls = [json.loads(line) for line in calls.splitlines()]
     assert ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'] in calls, calls
     assert ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'] in calls, calls
+    assert ["shortcuts"] in calls, calls
+    calls = [call for call in calls if call != ["shortcuts"]]
     assert calls == [
         ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'],
         ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'],

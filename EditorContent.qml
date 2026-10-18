@@ -60,6 +60,8 @@ FocusScope {
   }
 
   property string statusMessage: ""
+  property var shortcutOptions: []
+  property string shortcutMessage: ""
 
   // Keyboard cursor over the binding list; -1 until an arrow is pressed.
   property int cursorIndex: -1
@@ -80,6 +82,24 @@ FocusScope {
     for (var i = 0; i < bindings.length; i++)
       if (bindings[i].combo === key) return bindings[i]
     return null
+  }
+
+  readonly property string cli: service ? service.cli : ""
+  onServiceChanged: if (service) Qt.callLater(root.refresh)
+
+  function refresh() {
+    if (service && cli !== "" && !shortcutsProc.running) shortcutsProc.running = true
+  }
+
+  function chooseShortcut(value) {
+    for (var i = 0; i < shortcutOptions.length; i++) {
+      var option = shortcutOptions[i]
+      if (option.value !== value) continue
+      draftIsCommand = false
+      draftAction = option.keys
+      if (draftDescription.trim() === "") draftDescription = option.description
+      return
+    }
   }
 
   function comboText(combo) {
@@ -243,6 +263,31 @@ FocusScope {
     onTextKey: function (t) {
       if (t === "r" || t === "R") root.beginCapture()
       else if ((t === "t" || t === "T") && root.service) root.service.toggleEnabled()
+    }
+  }
+
+  Process {
+    id: shortcutsProc
+    command: [root.cli, "shortcuts"]
+    onStarted: root.shortcutMessage = "Loading current shortcuts…"
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var parsed = JSON.parse(text)
+          root.shortcutOptions = Array.isArray(parsed) ? parsed : []
+          root.shortcutMessage = root.shortcutOptions.length ? "" : "No replayable keyboard shortcuts found. Custom keys and commands are available below."
+        } catch (e) {
+          root.shortcutOptions = []
+          root.shortcutMessage = "Cannot read shortcuts; custom keys and commands are available below."
+        }
+      }
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.shortcutOptions = []
+        root.shortcutMessage = "Cannot read shortcuts. Check the active Hyprland session; custom keys and commands are available below."
+      }
     }
   }
 
@@ -593,6 +638,33 @@ FocusScope {
           if (root.draftHold) root.draftRepeat = false
         }
       }
+    }
+
+    SearchableDropdown {
+      id: shortcutPicker
+      Layout.fillWidth: true
+      label: "CURRENT SHORTCUTS (OPTIONAL)"
+      options: root.shortcutOptions
+      value: ""
+      triggerLabel: "Choose an existing shortcut"
+      placeholderText: "Search descriptions or keys…"
+      emptyText: "No matching keyboard shortcuts"
+      foreground: root.foreground
+      onChanged: function(value) {
+        root.chooseShortcut(value)
+        shortcutPicker.value = ""
+      }
+    }
+
+    Text {
+      Layout.fillWidth: true
+      visible: root.shortcutMessage !== ""
+      text: root.shortcutMessage
+      textFormat: Text.PlainText
+      color: Qt.darker(root.foreground, 1.5)
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
     }
 
     TextField {

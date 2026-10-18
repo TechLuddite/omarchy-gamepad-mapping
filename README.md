@@ -138,6 +138,29 @@ into view in a short window. Tab moves between controls in the window; popup Tab
 field, cancels recording, then closes, one step at a time. Disabling mapping
 leaves the editor usable.
 
+The optional **Current shortcuts** picker searches descriptions and key chords
+from the active Hyprland session. Selecting a row fills the editable Keys field;
+an empty description is filled too. You can still type any supported custom key
+chord or switch to Command. Selection never runs the action, and saving still
+requires a recorded controller combo and **Save binding**.
+
+The catalog refreshes when opening the editor or reloading bindings. It reads
+`hyprctl -j binds` directly, without relying on an Omarchy menu cache or copying
+commands. With no current session, a single available session is selected; with
+multiple sessions, set `HYPRLAND_INSTANCE_SIGNATURE` before launching the shell.
+An unavailable catalog does not prevent manual editing. This optional picker
+uses Omarchy's shared `SearchableDropdown` control and its keyboard navigation:
+Tab to the trigger, Enter to open, type to search, arrows to navigate, Enter to
+select, Escape to close.
+
+Only parser-supported, global keyboard shortcuts with ordinary modifier masks
+are listed. Mouse, raw keycode, submap, device-specific and special
+release/locked/long-press bindings are omitted. A virtual keyboard replays Linux
+key positions; keysym names and aliases such as `PLUS` can resolve differently
+on other layouts or require Shift. Check the resulting shortcut
+on your keyboard layout before relying on it. Several actions attached to the
+same chord are represented together and will retain the compositor's behavior.
+
 Everything is also available from the CLI:
 
 ```bash

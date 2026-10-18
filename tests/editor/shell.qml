@@ -115,6 +115,16 @@ ShellRoot {
           check(editor.foreground.toString() === Commons.Color.popups.text.toString(), "Window uses popup foreground")
           check(editor.width >= 280 && editor.implicitHeight > 100, "Real form is laid out")
           check(editor.bindings.length === 1, "Daemon binding snapshot is used")
+          check(editor.shortcutOptions.length === 1, "Fake live shortcuts loaded")
+          editor.draftIsCommand = true
+          var shortcutPicker = find(editor, function(item) { return item.label === "CURRENT SHORTCUTS (OPTIONAL)" })
+          check(shortcutPicker !== null, "Shared searchable picker exists")
+          shortcutPicker.changed("SUPER+RETURN")
+          check(!editor.draftIsCommand && action.text === "SUPER+RETURN" && description.text === "Terminal", "Picker fills editable keys and empty description")
+          check(fake.reloads === 0, "Choosing a shortcut does not save or dispatch")
+          editor.draftDescription = "My description"
+          editor.chooseShortcut("SUPER+RETURN")
+          check(description.text === "My description", "Picker preserves a custom description")
           editor.draftCombo = ["B"]
           editor.draftAction = "SUPER+"
           action.forceActiveFocus()

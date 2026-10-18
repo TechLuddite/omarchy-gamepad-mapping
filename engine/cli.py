@@ -14,6 +14,7 @@ from pathlib import Path
 from . import __version__
 from .actions import ActionRunner
 from .buttons import format_combo, parse_combo
+from .catalog import CatalogError, live_shortcuts
 from .config import CONFIG_PATH, PID_PATH, Binding, Config, ConfigError, editing, load
 from .daemon import Daemon
 from .devices import DeviceGone, Gamepad, find_pads, scan
@@ -515,6 +516,14 @@ def cmd_daemon(args) -> int:
 # -- argument parsing --------------------------------------------------------
 
 
+def cmd_shortcuts(args) -> int:
+    try:
+        print(json.dumps(live_shortcuts()))
+        return 0
+    except CatalogError as exc:
+        return fail(str(exc))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="controller-control",
@@ -523,6 +532,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--config", help=f"config file (default: {CONFIG_PATH})")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("shortcuts", help="list replayable live Hyprland shortcuts as JSON")
+    p.set_defaults(func=cmd_shortcuts)
 
     p = sub.add_parser("devices", help="list input devices")
     p.add_argument("--all", action="store_true", help="include non-input devices")
