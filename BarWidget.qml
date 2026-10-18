@@ -37,17 +37,25 @@ BarWidget {
 
   // ---- panel plumbing, same shape the bar expects from any widget --------
 
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  readonly property var panel: service ? service.editor : null
+  readonly property bool opened: panel ? panel.opened === true : false
 
-  function open() { if (panelLoader.item) panelLoader.item.open() }
-  function close() { if (panelLoader.item) panelLoader.item.close() }
-  function togglePanel() { if (panelLoader.item) panelLoader.item.toggle() }
+  function preparePanel() {
+    if (!service) return null
+    var target = service.ensureEditor()
+    injectPanel()
+    return target
+  }
 
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
-  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
+  function open() { var target = preparePanel(); if (target) target.open() }
+  function close() { if (panel) panel.close() }
+  function togglePanel() { var target = preparePanel(); if (target) target.toggle() }
+
+  readonly property bool popoutSwitchClosing: panel ? panel.popoutSwitchClosing === true : false
+  function closeForPopoutSwitch() { if (panel) panel.closeForPopoutSwitch() }
 
   function injectPanel() {
-    var target = panelLoader.item
+    var target = root.panel
     if (!target) return
     if ("bar" in target) target.bar = root.bar
     if ("settings" in target) target.settings = root.settings
@@ -58,6 +66,16 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
+  onPanelChanged: injectPanel()
+  Component.onDestruction: {
+    if (panel && panel.hostWidget === root) {
+      if (panel.opened) panel.close()
+      panel.anchorItem = null
+      panel.hostWidget = null
+      panel.bar = null
+      panel.settings = ({})
+    }
+  }
 
   Connections {
     target: root.service
@@ -78,17 +96,6 @@ BarWidget {
     id: flashTimer
     interval: 320
     onTriggered: root.flashing = false
-  }
-
-  Loader {
-    id: panelLoader
-    active: true
-    source: Qt.resolvedUrl("Panel.qml")
-    visible: false
-    onLoaded: {
-      root.injectPanel()
-      Qt.callLater(root.injectPanel)
-    }
   }
 
   // BarIconButton, not a bare WidgetButton: WidgetButton derives

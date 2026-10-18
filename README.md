@@ -123,6 +123,21 @@ The panel works from the keyboard too: up and down pick a binding, Enter edits
 it, `x` removes it, `r` records a combo, `t` flips the master switch, and Esc
 leaves a text field or closes the panel.
 
+For an ordinary window with touchscreen-keyboard access, choose **Open window**
+in the panel, or run:
+
+```bash
+omarchy-shell controller openWindow
+omarchy-shell controller closeWindow
+```
+
+The service lazily owns one editor shared by the popup and window. Switching
+views preserves the draft and active recording; closing cancels recording.
+The window also works without a bar widget. Focused fields and buttons scroll
+into view in a short window. Tab moves between controls; Esc leaves a text
+field, cancels recording, then closes, one step at a time. Disabling mapping
+leaves the editor usable.
+
 Everything is also available from the CLI:
 
 ```bash
@@ -407,6 +422,15 @@ python3 -m unittest discover -s tests -p test_combos.py -v
 python3 -m unittest discover -s tests -p test_config.py -v
 python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
+```
+
+The isolated editor check uses the installed Omarchy UI kit and Quickshell
+offscreen, with a fake CLI/service, temporary home/runtime and no session bus.
+It opens no input devices and does not start the daemon. Only the Wayland
+layer-shell wrapper is replaced; the form, window and controls are real:
+
+```bash
+python3 tests/check_editor.py
 ```
 
 The end-to-end tests create real virtual controllers visible to other

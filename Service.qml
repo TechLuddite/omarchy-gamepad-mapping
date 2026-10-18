@@ -298,8 +298,36 @@ Item {
     onTriggered: root.start()
   }
 
+  // Bar access and IPC share one editor, draft and capture subscription.
+  readonly property var editor: editorLoader.item
+
+  function ensureEditor() {
+    editorLoader.active = true
+    return editorLoader.item
+  }
+
+  // Owned by the headless service so launchers do not require a bar widget.
+  Loader {
+    id: editorLoader
+    active: false
+    source: Qt.resolvedUrl("Panel.qml")
+    onLoaded: item.service = root
+  }
+
   IpcHandler {
     target: "controller"
+
+    function openWindow(): string {
+      var editor = root.ensureEditor()
+      if (!editor) return "editor unavailable"
+      editor.openWindow()
+      return "ok"
+    }
+
+    function closeWindow(): string {
+      if (editorLoader.item) editorLoader.item.close()
+      return "ok"
+    }
 
     function status(): string {
       return JSON.stringify({
