@@ -16,7 +16,7 @@ Item {
   property var manifest: null
 
   readonly property string pluginDir: Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")
-  readonly property string cli: pluginDir + "bin/controller-control"
+  readonly property string cli: Qt.resolvedUrl("bin/controller-control").toString().replace(/^file:\/\//, "")
 
   // Linux signal numbers, for Process.signal().
   readonly property int sigHup: 1
