@@ -20,12 +20,15 @@ def shortcut_catalog(binds: list[dict]) -> list[dict[str, str]]:
     XKB keysyms are accepted only when the existing key parser understands
     them. This is intentionally conservative about special bind semantics.
     """
+    released = {(str(b.get("key", "")).strip().upper(), b.get("modmask"), b.get("submap", ""))
+                for b in binds if isinstance(b, dict) and b.get("release")
+                and isinstance(b.get("modmask"), int) and isinstance(b.get("submap", ""), str)}
     descriptions: dict[str, list[str]] = {}
     for bind in binds:
         if not isinstance(bind, dict):
             continue
         if any(bind.get(flag) for flag in (
-            "mouse", "release", "longPress", "locked", "catch_all",
+            "mouse", "release", "longPress", "catch_all",
             "catchAll", "submap", "ignore_mods", "ignoreMods",
             "multiKey", "click", "drag", "devices",
         )):
@@ -40,6 +43,8 @@ def shortcut_catalog(binds: list[dict]) -> list[dict[str, str]]:
         if not isinstance(key, str) or not key.strip():
             continue
         if isinstance(mask, bool) or not isinstance(mask, int) or mask < 0 or mask & ~77:
+            continue
+        if (key.strip().upper(), mask, bind.get("submap", "")) in released:
             continue
         # Do not turn raw keycodes or pointer tokens into a keyboard shortcut.
         if ":" in key or "+" in key or "," in key:
@@ -61,8 +66,8 @@ def shortcut_catalog(binds: list[dict]) -> list[dict[str, str]]:
         if description not in names:
             names.append(description)
     return [
-        {"value": keys, "keys": keys, "label": f"{'; '.join(names)} · {keys}",
-         "description": "; ".join(names)}
+        {"value": keys, "keys": keys, "label": "; ".join(names),
+         "description": keys, "actionDescription": "; ".join(names)}
         for keys, names in sorted(descriptions.items())
     ]
 

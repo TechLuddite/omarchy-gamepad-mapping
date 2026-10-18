@@ -62,6 +62,10 @@ FocusScope {
   property string statusMessage: ""
   property var shortcutOptions: []
   property string shortcutMessage: ""
+  property bool shortcutsLoaded: false
+  property string shortcutOutput: ""
+  property string shortcutError: ""
+  property string autoDescription: ""
 
   // Keyboard cursor over the binding list; -1 until an arrow is pressed.
   property int cursorIndex: -1
@@ -85,20 +89,29 @@ FocusScope {
   }
 
   readonly property string cli: service ? service.cli : ""
-  onServiceChanged: if (service) Qt.callLater(root.refresh)
 
   function refresh() {
-    if (service && cli !== "" && !shortcutsProc.running) shortcutsProc.running = true
+    shortcutsLoaded = false
+    if (shortcutPicker.popupOpen) loadShortcuts()
   }
-
+  function loadShortcuts() {
+    if (service && cli !== "" && !shortcutsLoaded && !shortcutsProc.running) shortcutsProc.running = true
+  }
+  function selectAction(keys, description, append) {
+    draftIsCommand = false
+    draftAction = append && /\+\s*$/.test(draftAction) ? draftAction.trim() + keys : keys
+    if (!draftDescription.trim() || draftDescription === autoDescription) {
+      draftDescription = description
+      autoDescription = description
+    }
+  }
   function chooseShortcut(value) {
     for (var i = 0; i < shortcutOptions.length; i++) {
       var option = shortcutOptions[i]
-      if (option.value !== value) continue
-      draftIsCommand = false
-      draftAction = option.keys
-      if (draftDescription.trim() === "") draftDescription = option.description
-      return
+      if (option.value === value) {
+        selectAction(option.keys, option.actionDescription || option.label, false)
+        return
+      }
     }
   }
 
@@ -130,6 +143,7 @@ FocusScope {
     root.draftIsCommand = !binding.keys
     root.draftAction = binding.keys || binding.exec || ""
     root.draftDescription = binding.description || ""
+    root.autoDescription = root.draftDescription
     root.draftRepeat = binding.repeat === true
     root.draftHold = binding.hold === true
     root.focusAction()
@@ -157,6 +171,7 @@ FocusScope {
     root.draftCombo = []
     root.draftAction = ""
     root.draftDescription = ""
+    root.autoDescription = ""
     root.draftRepeat = false
     root.draftHold = false
   }
@@ -269,25 +284,28 @@ FocusScope {
   Process {
     id: shortcutsProc
     command: [root.cli, "shortcuts"]
-    onStarted: root.shortcutMessage = "Loading current shortcuts…"
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var parsed = JSON.parse(text)
-          root.shortcutOptions = Array.isArray(parsed) ? parsed : []
-          root.shortcutMessage = root.shortcutOptions.length ? "" : "No replayable keyboard shortcuts found. Custom keys and commands are available below."
-        } catch (e) {
-          root.shortcutOptions = []
-          root.shortcutMessage = "Cannot read shortcuts; custom keys and commands are available below."
-        }
-      }
+    onStarted: {
+      root.shortcutMessage = "Loading current shortcuts…"
+      root.shortcutOutput = ""
+      root.shortcutError = ""
     }
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.shortcutOutput = text }
+    stderr: StdioCollector { waitForEnd: true; onStreamFinished: root.shortcutError = text.trim() }
     onExited: function(exitCode) {
-      if (exitCode !== 0) {
+      Qt.callLater(function() {
         root.shortcutOptions = []
-        root.shortcutMessage = "Cannot read shortcuts. Check the active Hyprland session; custom keys and commands are available below."
-      }
+        if (exitCode !== 0) {
+          root.shortcutMessage = root.shortcutError || "Cannot read shortcuts; check the active Hyprland session."
+          return
+        }
+        try {
+          var parsed = JSON.parse(root.shortcutOutput)
+          if (!Array.isArray(parsed)) throw new Error("Invalid catalog")
+          root.shortcutOptions = parsed
+          root.shortcutsLoaded = true
+          root.shortcutMessage = parsed.length ? "" : "No replayable keyboard shortcuts found. Custom keys and commands are available below."
+        } catch (e) { root.shortcutMessage = "Cannot read shortcuts; custom keys and commands are available below." }
+      })
     }
   }
 
@@ -388,7 +406,7 @@ FocusScope {
         iconText: "󰑐"
         tooltipText: root.running ? "Reload bindings" : "Start again"
         foreground: root.foreground
-        onClicked: if (root.service) root.service.reload()
+        onClicked: { root.refresh(); if (root.service) root.service.reload() }
       }
     }
 
@@ -642,6 +660,7 @@ FocusScope {
 
     SearchableDropdown {
       id: shortcutPicker
+      onPopupOpenChanged: if (popupOpen) root.loadShortcuts()
       Layout.fillWidth: true
       label: "CURRENT SHORTCUTS (OPTIONAL)"
       options: root.shortcutOptions

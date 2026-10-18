@@ -16,6 +16,25 @@ def binding(key="Return", modmask=64, **kwargs):
 
 
 class ShortcutCatalogTests(unittest.TestCase):
+    def test_locked_media_and_release_pairs_from_captured_schema(self):
+        from pathlib import Path
+        rows = json.loads((Path(__file__).parent / 'fixtures/hyprland-0.56.2-binds.json').read_text())
+        result = shortcut_catalog(rows)
+        keys = {row['keys'] for row in result}
+        self.assertIn('XF86AUDIORAISEVOLUME', keys)
+        self.assertNotIn('F9', keys)
+        self.assertIn('SUPER+RETURN', keys)
+        for row in result:
+            self.assertEqual(row['description'], row['keys'])
+            self.assertNotIn(' · ', row['label'])
+
+    def test_release_pair_is_excluded_regardless_of_order_or_lock_flag(self):
+        press = binding('F9', 0, locked=True)
+        release = binding('f9', 0, release=True)
+        self.assertEqual(shortcut_catalog([press, release]), [])
+        self.assertEqual(shortcut_catalog([release, press]), [])
+
+
     def test_names_and_modifier_order_use_existing_parser(self):
         row = shortcut_catalog([binding(modmask=77)])[0]
         self.assertEqual(row["keys"], "SUPER+CTRL+ALT+SHIFT+RETURN")
@@ -24,13 +43,13 @@ class ShortcutCatalogTests(unittest.TestCase):
     def test_duplicate_chords_keep_all_distinct_descriptions(self):
         rows = shortcut_catalog([binding(), binding(), binding(description="Other action")])
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["description"], "Open terminal; Other action")
+        self.assertEqual(rows[0]["actionDescription"], "Open terminal; Other action")
 
     def test_unknown_keysyms_are_skipped(self):
         self.assertEqual(shortcut_catalog([binding(key="UnsupportedKeysym")]), [])
 
     def test_special_bind_semantics_are_skipped(self):
-        for flag in ("mouse", "release", "longPress", "locked", "catch_all",
+        for flag in ("mouse", "release", "longPress", "catch_all",
                      "catchAll", "ignore_mods", "ignoreMods", "submap",
                      "multiKey", "click", "drag", "devices"):
             with self.subTest(flag=flag):
@@ -55,7 +74,7 @@ class ShortcutCatalogTests(unittest.TestCase):
 
     def test_no_dispatch_metadata_or_command_is_exposed(self):
         row = shortcut_catalog([binding(description="", dispatcher="exec", arg="private-token")])[0]
-        self.assertEqual(row["description"], "Keyboard shortcut")
+        self.assertEqual(row["actionDescription"], "Keyboard shortcut")
         self.assertNotIn("private-token", json.dumps(row))
         self.assertNotIn("exec", row)
 

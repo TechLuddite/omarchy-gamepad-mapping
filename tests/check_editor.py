@@ -10,6 +10,11 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
+import json
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from engine.catalog import shortcut_catalog
 
 repo = Path(__file__).resolve().parents[1]
 kit = Path(os.environ.get('OMARCHY_SHELL_DIR', '/usr/share/omarchy/shell'))
@@ -27,6 +32,8 @@ with tempfile.TemporaryDirectory(prefix='controller-editor-check-') as directory
     if not wayland_socket:
         shutil.copy2(repo / 'tests/editor/KeyboardPanel.qml', root / 'Ui/KeyboardPanel.qml')
     shutil.copy2(repo / 'tests/editor/shell.qml', root / 'shell.qml')
+    captured = json.loads((repo / 'tests/fixtures/hyprland-0.56.2-binds.json').read_text())
+    catalog_response = json.dumps(shortcut_catalog(captured))
     cli = root / 'bin/controller-control'
     cli.write_text('''#!/usr/bin/env python3
 import json, os, sys
@@ -34,14 +41,14 @@ from pathlib import Path
 with (Path(os.environ['HOME']) / 'calls.jsonl').open('a') as stream:
     stream.write(json.dumps(sys.argv[1:]) + '\\n')
 if sys.argv[1:] == ['shortcuts']:
-    print(json.dumps([{'value': 'SUPER+RETURN', 'keys': 'SUPER+RETURN', 'label': 'Terminal · SUPER+RETURN', 'description': 'Terminal'}]))
+    print(CATALOG_RESPONSE)
     raise SystemExit(0)
 if sys.argv[1] not in ('bind', 'unbind'):
     raise SystemExit('Unexpected CLI command')
 if sys.argv[1:3] == ['bind', 'Z']:
     print('fixture mutation failed', file=sys.stderr)
     raise SystemExit(7)
-''')
+'''.replace('CATALOG_RESPONSE', repr(catalog_response)))
     cli.chmod(0o700)
     for name, response in [('hyprctl', '{}'), ('fc-match', 'monospace')]:
         stub = root / 'bin' / name

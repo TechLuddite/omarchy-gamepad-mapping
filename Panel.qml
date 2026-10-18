@@ -22,7 +22,6 @@ Panel {
   function open() {
     root.controller.show()
     editorWindow.visible = false
-    editor.refresh()
   }
 
   function openWindow() {
@@ -30,7 +29,6 @@ Panel {
     if (!editorWindow.visible) editorWindow.visible = false
     editorWindow.visible = true
     root.controller.hide()
-    editor.refresh()
     Qt.callLater(function() { if (editorWindow.visible) editor.forceActiveFocus() })
   }
 

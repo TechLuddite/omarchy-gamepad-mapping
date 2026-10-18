@@ -150,7 +150,7 @@ commands. With no current session, a single available session is selected; with
 multiple sessions, set `HYPRLAND_INSTANCE_SIGNATURE` before launching the shell.
 An unavailable catalog does not prevent manual editing. This optional picker
 uses Omarchy's shared `SearchableDropdown` control and its keyboard navigation:
-Tab to the trigger, Enter to open, type to search, arrows to navigate, Enter to
+In the ordinary window, Tab to the trigger, Enter to open, type to search, arrows to navigate, Enter to
 select, Escape to close.
 
 Only parser-supported, global keyboard shortcuts with ordinary modifier masks
@@ -446,6 +446,7 @@ python3 -m unittest discover -s tests -p test_combos.py -v
 python3 -m unittest discover -s tests -p test_config.py -v
 python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
+python3 -m unittest discover -s tests -p test_catalog.py -v
 ```
 
 The isolated editor check uses the installed Omarchy UI kit and Quickshell
