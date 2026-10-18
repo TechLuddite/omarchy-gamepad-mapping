@@ -16,6 +16,7 @@ Panel {
   property var hostWidget: null
   property var service: null
   readonly property var barIdentity: hostWidget || root
+  readonly property Item form: editor
   readonly property bool windowOpened: editorWindow.visible
 
   function open() {

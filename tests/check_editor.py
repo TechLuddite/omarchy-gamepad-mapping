@@ -23,7 +23,9 @@ with tempfile.TemporaryDirectory(prefix='controller-editor-check-') as directory
     shutil.copytree(kit / 'Ui', root / 'Ui')
     # Layer-shell surfaces require a Wayland compositor; replace only that
     # wrapper. The form, FloatingWindow, UI controls and key events are real.
-    shutil.copy2(repo / 'tests/editor/KeyboardPanel.qml', root / 'Ui/KeyboardPanel.qml')
+    wayland_socket = os.environ.get('CONTROLLER_TEST_WAYLAND_SOCKET', '')
+    if not wayland_socket:
+        shutil.copy2(repo / 'tests/editor/KeyboardPanel.qml', root / 'Ui/KeyboardPanel.qml')
     shutil.copy2(repo / 'tests/editor/shell.qml', root / 'shell.qml')
     cli = root / 'bin/controller-control'
     cli.write_text('''#!/usr/bin/env python3
@@ -47,9 +49,12 @@ if sys.argv[1:3] == ['bind', 'Z']:
     env.update(PATH=str(root / 'bin') + os.pathsep + env.get('PATH', ''), HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'config'),
                XDG_STATE_HOME=str(root / 'state'), XDG_CACHE_HOME=str(root / 'cache'),
                XDG_RUNTIME_DIR=str(root / 'runtime'), DBUS_SESSION_BUS_ADDRESS='unix:path=/nonexistent',
-               QT_QPA_PLATFORM='offscreen', QT_QPA_PLATFORMTHEME='', QT_QUICK_CONTROLS_STYLE='Basic', QSG_RHI_BACKEND='software')
+               QT_QPA_PLATFORM='offscreen', QT_QPA_PLATFORMTHEME='', QT_QUICK_CONTROLS_STYLE='Basic', QT_QUICK_BACKEND='software')
     for name in ('DISPLAY', 'WAYLAND_DISPLAY', 'QS_CONFIG_PATH', 'QS_CONFIG_NAME', 'HYPRLAND_INSTANCE_SIGNATURE', 'SWAYSOCK'):
         env.pop(name, None)
+    if wayland_socket:
+        assert Path(wayland_socket).is_absolute() and Path(wayland_socket).is_socket()
+        env.update(QT_QPA_PLATFORM='wayland', WAYLAND_DISPLAY=wayland_socket)
     result = subprocess.run(['quickshell', '--no-color', '-p', str(root / 'shell.qml')],
                             env=env, text=True, capture_output=True, timeout=20)
     output = result.stdout + result.stderr

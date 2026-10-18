@@ -27,12 +27,17 @@ ShellRoot {
     property QtObject shell: QtObject {
       function serviceFor(id) { return fake }
     }
+    property string position: "top"
+    property bool popoutSwitching: false
     property bool vertical: false
     property int barSize: 32
     property color barForeground: "#cacccc"
     property color urgent: "#ff0000"
     property string fontFamily: "monospace"
     property bool foregroundAnimationEnabled: false
+    property var activePopout: false
+    function requestPopout(owner) { activePopout = owner }
+    function releasePopout(owner) { if (activePopout === owner) activePopout = false }
     function hideTooltip(item) {}
   }
   Loader {
@@ -86,7 +91,7 @@ ShellRoot {
           check(panel !== null && !panel.opened && !panel.windowOpened, "Editor starts closed")
           check(fake.ensureEditor() === panel, "IPC reuses one service editor")
           // The editor is reparented into the hidden popup initially.
-          editor = find(panel, function(item) { return item.draftCombo !== undefined })
+          editor = panel.form
           check(editor !== null, "Shared content exists")
           action = find(editor, function(item) { return item.placeholderText !== undefined && item.placeholderText.indexOf("2. ") === 0 })
           description = find(editor, function(item) { return item.placeholderText === "Description (optional)" })
