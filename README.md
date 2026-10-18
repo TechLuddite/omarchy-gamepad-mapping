@@ -399,7 +399,8 @@ JSON with `available`, `bindings` and `error`. Each binding includes a mapper
 plus-eight offset; `mouse:` codes are already evdev codes. Raw mouse Back is
 reported as `BACK_BUTTON`, preserving the legacy config alias `BACK → SELECT`.
 
-The editor refreshes this context when it opens or reloads bindings. It shows
+Choose **Check compositor overlaps** or the explicit **Reload** button to read
+this advisory context. Merely opening the editor does not query it. It shows
 only mappings matching a selected draft input or a saved controller input,
 applying `device.aliases` once just as the input decoder does. A label such as
 `A → B` preserves both the raw compositor identity and the recorded mapper
@@ -526,6 +527,11 @@ generated `/dev/input/event*` nodes (for example, membership in `input`). The
 dedicated Back fixture can be classified as a mouse; access granted
 only to joystick devices is insufficient.
 
+
+Overlap rows use the current face-button labels and skip disabled saved mappings.
+When the daemon reports an actual exclusive grab, the overlap message explains
+that physical events are owned by the plugin. Missing identities in Hyprland
+0.56.2 are counted rather than presented as an all-clear.
 
 Searchable picker popups reserve scroll space in the editor and size their
 result viewport to the window, including short windows. The installed shared
