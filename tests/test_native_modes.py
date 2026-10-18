@@ -285,6 +285,10 @@ class FakePad:
     def acquisition_neutral(self):
         return self.neutral and not any(abs(v) > 0.15 for v in self.axes.values())
 
+    @property
+    def acquisition_blocker(self):
+        return "Waiting to grab: held input" if not self.acquisition_neutral else ""
+
     def apply(self, settings, aliases):
         self.aliases = aliases
 

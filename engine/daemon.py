@@ -105,7 +105,7 @@ class Daemon:
                 "input_mode": self.config.input_mode,
                 "input_ready": self.safe_ready if self.config.modes_enabled else bool(self.pads),
                 "input_status": self.input_status,
-                "input_blocker": "; ".join(p.safety_error for p in self.pads.values() if p.safety_error),
+                "input_blocker": "; ".join(filter(None, (p.safety_error or (p.acquisition_blocker if not p.grabbed else "") for p in self.pads.values()))),
                 "requested_exclusive": self.config.effective_exclusive,
                 "effective_exclusive": bool(self.pads) and all(p.grabbed for p in self.pads.values())}
 

@@ -293,18 +293,23 @@ class Gamepad:
                 return False
         return True
 
+    @property
+    def acquisition_blocker(self) -> str:
+        if self.acquisition_neutral:
+            return ""
+        active = [f"axis {code}={fraction:.3f}" for code, fraction in self.axes.items()
+                  if (code in STICK_AXES and abs(fraction) > 0.15)
+                  or (code in TRIGGER_AXES and fraction > 0.05)
+                  or (code in HAT_AXES and fraction != 0)]
+        return "Waiting to grab: " + (", ".join(active) or "held " + ", ".join(sorted(self.held)))
+
     def retry_grab(self, exclusive: bool) -> bool:
         if exclusive == self.grabbed:
             return True
         if exclusive and self.guarded:
             # Do not steal a release from a game that already saw the press.
             if not self.resync() or not self.acquisition_neutral:
-                if not self.safety_error:
-                    active = [f"axis {code}={fraction:.3f}" for code, fraction in self.axes.items()
-                              if (code in STICK_AXES and abs(fraction) > 0.15)
-                              or (code in TRIGGER_AXES and fraction > 0.05)
-                              or (code in HAT_AXES and fraction != 0)]
-                    self.safety_error = "Waiting to grab: " + (", ".join(active) or "held " + ", ".join(sorted(self.held)))
+                self.safety_error = self.safety_error or self.acquisition_blocker
                 return False
         if not li.grab(self.fd, exclusive):
             return False
