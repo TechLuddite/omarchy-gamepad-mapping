@@ -1,6 +1,6 @@
 """Standard keyboard keys, using canonical names accepted by the key parser."""
 
-from .keys import parse_keys
+from .keys import KEY_ALIASES, parse_keys
 
 
 def keyboard_catalog() -> list[dict[str, str]]:
@@ -26,6 +26,13 @@ def keyboard_catalog() -> list[dict[str, str]]:
         "RIGHTSHIFT": "Right Shift", "LEFTALT": "Left Alt", "RIGHTALT": "Right Alt",
         "SYSRQ": "Print screen / SysRq", "KPENTER": "Keypad Enter",
     }
+    labels.update({"PAGEUP": "Page up", "PAGEDOWN": "Page down", "CAPSLOCK": "Caps lock",
+        "NUMLOCK": "Num lock", "SCROLLLOCK": "Scroll lock", "BACKSPACE": "Backspace",
+        "GRAVE": "Backtick / Tilde", "EQUAL": "Equal / Plus", "BACKSLASH": "Backslash",
+        "KPDOT": "Keypad decimal", "KPPLUS": "Keypad plus", "KPMINUS": "Keypad minus",
+        "KPASTERISK": "Keypad multiply", "KPSLASH": "Keypad divide", "KPEQUAL": "Keypad equal",
+        "KPCOMMA": "Keypad comma", "LEFTBRACE": "Left bracket", "RIGHTBRACE": "Right bracket"})
+    labels.update({f"KP{i}": f"Keypad {i}" for i in range(10)})
     result = []
     for names, group in groups:
         for name in names:
@@ -33,6 +40,7 @@ def keyboard_catalog() -> list[dict[str, str]]:
             # offered key remains usable regardless of alias additions.
             parse_keys(name)
             title = labels.get(name, name.title())
-            result.append({"value": name, "keys": name, "description": title,
-                           "label": f"{title} · {group} · {name}"})
+            aliases = [alias for alias, target in KEY_ALIASES.items() if target == name]
+            result.append({"value": name, "keys": name, "actionDescription": title,
+                           "description": " · ".join([group, name, *aliases]), "label": title})
     return result

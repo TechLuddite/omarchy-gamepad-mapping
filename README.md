@@ -458,6 +458,7 @@ python3 -m unittest discover -s tests -p test_config.py -v
 python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
 python3 -m unittest discover -s tests -p test_catalog.py -v
+python3 -m unittest discover -s tests -p test_keyboard_catalog.py -v
 ```
 
 The isolated editor check uses the installed Omarchy UI kit and Quickshell
@@ -495,3 +496,6 @@ UI control supplies search, result clipping and keyboard behavior.
 ## License
 
 MIT
+
+Letters and punctuation use physical positions named for US layouts; for example,
+A may produce q on AZERTY. Picking a key after a trailing + retains typed modifiers.

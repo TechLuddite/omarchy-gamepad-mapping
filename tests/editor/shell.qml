@@ -107,6 +107,7 @@ ShellRoot {
           panel.openWindow()
           check(editor.shortcutOptions.length === 0, "Opening the editor does not fetch shortcuts")
           editor.loadShortcuts()
+          editor.loadKeyboard()
         } else if (stage === 1) {
           check(panel.windowOpened && !panel.opened, "Window opens independently of bar")
           widgetLoader.active = true
@@ -131,12 +132,22 @@ ShellRoot {
           editor.draftDescription = "My description"
           editor.chooseShortcut("SUPER+RETURN")
           check(description.text === "My description", "Picker preserves a custom description")
-          check(editor.keyboardOptions.length === 1, "Fake standard keys loaded")
+          check(editor.keyboardOptions.length === 119, "Fake standard keys loaded")
           var keyboardPicker = find(editor, function(item) { return item.label === "STANDARD KEY (OPTIONAL)" })
           check(keyboardPicker !== null, "Shared searchable key picker exists")
           keyboardPicker.changed("ENTER")
           check(action.text === "ENTER" && description.text === "My description", "Standard key fills editable input and preserves custom description")
-          check(fake.reloads === 0, "Choosing a standard key does not save or dispatch")
+          editor.draftDescription = ""
+          editor.chooseKeyboardKey("LEFTSHIFT")
+          editor.chooseKeyboardKey("RIGHTSHIFT")
+          check(editor.draftDescription === "Right Shift", "Automatic key descriptions follow repeated selection")
+          editor.draftAction = "SUPER+"
+          editor.chooseKeyboardKey("A")
+          check(editor.draftAction === "SUPER+A" && editor.draftCombo.length === 0, "Key choice appends to typed modifiers without saving")
+          editor.editBinding({combo:"A",keys:"SUPER+RETURN",description:"Terminal"})
+          editor.chooseKeyboardKey("F5")
+          check(editor.draftDescription === "F5", "Loaded action description follows replacement key")
+          editor.clearDraft()
           editor.draftCombo = ["B"]
           editor.draftAction = "SUPER+"
           action.forceActiveFocus()

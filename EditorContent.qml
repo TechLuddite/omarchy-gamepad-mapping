@@ -118,14 +118,16 @@ FocusScope {
     }
   }
 
+  function loadKeyboard() {
+    if (service && cli !== "" && !keyboardOptions.length && !keyboardProc.running) keyboardProc.running = true
+  }
   function chooseKeyboardKey(value) {
     for (var i = 0; i < keyboardOptions.length; i++) {
       var option = keyboardOptions[i]
-      if (option.value !== value) continue
-      draftIsCommand = false
-      draftAction = option.keys
-      if (draftDescription.trim() === "") draftDescription = option.description
-      return
+      if (option.value === value) {
+        selectAction(option.keys, option.actionDescription || option.label, true)
+        return
+      }
     }
   }
 
@@ -730,6 +732,7 @@ FocusScope {
 
     SearchableDropdown {
       id: keyboardPicker
+      onPopupOpenChanged: if (popupOpen) root.loadKeyboard()
       Layout.fillWidth: true
       visible: !root.draftIsCommand
       label: "STANDARD KEY (OPTIONAL)"

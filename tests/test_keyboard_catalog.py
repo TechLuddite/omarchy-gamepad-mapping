@@ -33,7 +33,7 @@ class KeyboardCatalogTests(unittest.TestCase):
                            ("SYSRQ", "Print screen"), ("LEFTMETA", "Super")):
             with self.subTest(name=name):
                 self.assertIn(term, rows[name]["label"])
-                self.assertIn(name, rows[name]["label"])
+                self.assertIn(name, rows[name]["description"])
 
     def test_catalog_does_not_read_compositor_or_config(self):
         out = io.StringIO()
@@ -46,3 +46,11 @@ class KeyboardCatalogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FriendlySearchTests(unittest.TestCase):
+    def test_common_spaced_names_and_aliases_are_searchable(self):
+        rows = keyboard_catalog()
+        for term, expected in [('page up','PAGEUP'),('caps lock','CAPSLOCK'),('keypad 5','KP5'),('backtick','GRAVE'),('tilde','GRAVE'),('plus','EQUAL'),('BRACKETLEFT','LEFTBRACE'),('PGUP','PAGEUP'),('PRINT','SYSRQ')]:
+            matches = [r['keys'] for r in rows if term.lower() in (r['label']+' '+r['description']).lower()]
+            self.assertIn(expected,matches,term)
