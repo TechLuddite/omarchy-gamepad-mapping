@@ -57,6 +57,16 @@ class PointerIntegration(unittest.TestCase):
         output.reset_mock()
         return daemon, pad, runner, output
 
+    def test_first_pointer_tick_does_not_repeat_the_opening_state(self):
+        runner = Mock()
+        runner.validate.return_value = None
+        with patch('engine.daemon.ActionRunner', return_value=runner):
+            daemon = Daemon(Config({'bindings': []}), stream=io.StringIO())
+        daemon.emit_state()
+        daemon._tick_pointer(0.)
+        events = [json.loads(line)['event'] for line in daemon.stream.getvalue().splitlines()]
+        self.assertEqual(events.count('state'), 1)
+
     def test_legacy_and_game_never_allocate_mouse_output(self):
         for modes in ({'enabled': False}, {'enabled': True, 'active': 'game'}):
             daemon, pad, runner, output = self.daemon(modes=modes)

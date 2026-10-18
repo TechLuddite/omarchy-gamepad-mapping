@@ -206,6 +206,10 @@ class Daemon:
             self.running = False
 
     def emit_state(self) -> None:
+        # Every state event carries the pointer status, so note what went
+        # out: _tick_pointer then announces only a real change, rather than
+        # repeating the opening snapshot on its first tick.
+        self._last_pointer_status = self.pointer_status
         self.emit(
             "state",
             connected=bool(self.pads),
