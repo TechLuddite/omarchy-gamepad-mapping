@@ -185,12 +185,14 @@ def read_bits(fd: int, ev_type: int, count: int) -> bytes:
     return bytes(buf)
 
 
-def read_key_state(fd: int) -> bytes:
+def read_key_state(fd: int, *, strict: bool = False) -> bytes:
     """Bitmask of the keys and buttons held down right now."""
     buf = bytearray((KEY_CNT + 7) // 8)
     try:
         fcntl.ioctl(fd, EVIOCGKEY(len(buf)), buf)
     except OSError:
+        if strict:
+            raise
         return b""
     return bytes(buf)
 

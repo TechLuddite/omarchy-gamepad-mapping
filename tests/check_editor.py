@@ -65,6 +65,15 @@ if sys.argv[1:] == ['conflicts', '--json']:
             {'token': 'KEY_ENTER', 'code': 28, 'description': 'Keyboard action', 'modifiers': 0, 'submap': ''},
         ]}))
     raise SystemExit(0)
+if sys.argv[1] == 'mode':
+    path = Path(os.environ['HOME']) / 'mode.json'
+    state = json.loads(path.read_text()) if path.exists() else {'enabled': False, 'active': 'game'}
+    if sys.argv[2] != '--json':
+        state['enabled'] = sys.argv[2] != 'disable'
+        if sys.argv[2] in ('game', 'os'): state['active'] = sys.argv[2]
+        path.write_text(json.dumps(state))
+    print(json.dumps({'modes_enabled': state['enabled'], 'active': state['active']}))
+    raise SystemExit(0)
 if sys.argv[1] not in ('bind', 'unbind'):
     raise SystemExit('Unexpected CLI command')
 if sys.argv[1:3] == ['bind', 'Z']:
@@ -101,6 +110,8 @@ if sys.argv[1:3] == ['bind', 'Z']:
     assert ["keyboard-keys"] in calls, calls
     assert sum(call == ["conflicts", "--json"] for call in calls) >= 2, calls
     calls = [call for call in calls if call not in (["shortcuts"], ["keyboard-keys"], ["conflicts", "--json"])]
+    assert [call for call in calls if call[0] == "mode" and call != ["mode", "--json"]] == [["mode", "game"], ["mode", "os"], ["mode", "disable"]], calls
+    calls = [call for call in calls if call[0] != "mode"]
     assert calls == [
         ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'],
         ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'],

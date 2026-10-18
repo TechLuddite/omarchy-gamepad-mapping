@@ -383,6 +383,54 @@ Bluetooth connection. It also notices the file changing, so a hand edit
 applies within `rescan_interval_s` (two seconds by default). Aliases, the
 d-pad source and the analog thresholds apply to a connected pad at once.
 
+## Optional Game and OS modes
+
+Existing installations keep the original behavior until modes are explicitly
+enabled. Inspect the saved selection without changing settings:
+
+```bash
+controller-control mode --json
+controller-control mode game       # enable modes; ordinary controller passthrough
+controller-control mode os         # enable modes; exclusive desktop control
+controller-control mode disable    # restore the original device.exclusive policy
+controller-control mode enable     # restore the saved Game/OS selection (Game initially)
+```
+
+Opt-in settings live in `"modes": {"enabled": true, "active": "game"}`. Config
+files without this section retain their original serialization. A mode command
+saves atomically and asks the running daemon to reload; its JSON describes saved
+configuration, not proof that a controller has acquired ownership.
+
+Game mode releases exclusive ownership and runs no desktop actions. Games read
+the original controller directly; the plugin creates no replacement controller.
+OS mode waits for all selected controllers to be neutral before acquiring
+exclusive grabs. If another program owns a controller, desktop output stays
+blocked and acquisition retries automatically. Turning the master switch off
+releases OS grabs; re-enabling waits for neutral before taking ownership again.
+The separate transient capture pause can retain an existing OS grab.
+
+Startup, reconnect, config/profile reload, pause/resume and input queue overflow
+reset pending chords and close virtual output. Held controls must return to
+neutral before actions resume. Snapshot failures keep output blocked. Sticks
+must return within 15% of center, triggers within 5% of rest, and hats/buttons
+to rest. Current keys are read through `EVIOCGKEY` and axis ranges/values are
+queried again; cached hotplug metadata cannot establish neutral state.
+`SYN_DROPPED` discards history through the next `SYN_REPORT` before a fresh
+snapshot. With multiple controllers, a shared neutral barrier and reference
+counting prevent one controller's release from clearing another's held token.
+
+Daemon events expose `modes_enabled`, `input_mode`, `input_ready`, `input_status`,
+`requested_exclusive` and `effective_exclusive`. Status distinguishes legacy,
+passthrough, disconnected, disabled, paused, waiting for a grab, waiting for
+neutral, and ready. These fields report current effective ownership separately
+from the saved requested mode. Per-device state includes snapshot readiness and
+an error when a safe snapshot is unavailable.
+
+The mode, recovery and CLI tests use mocked descriptors, snapshots, grabs and
+action runners. They do not establish physical hardware, suspend/resume or
+sustained-use acceptance, and must not be confused with isolated live input
+integration testing.
+
 ## Existing compositor mappings
 
 The read-only context helper reports Hyprland bindings that may overlap an

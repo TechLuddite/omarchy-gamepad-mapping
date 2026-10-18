@@ -229,6 +229,25 @@ def cmd_conflicts(args) -> int:
     return 0
 
 
+def cmd_mode(args) -> int:
+    if args.selection is not None:
+        with _edit(args) as config:
+            config.set_mode(args.selection)
+            config.save()
+        _notify_daemon(signal.SIGHUP)
+    else:
+        config = _load(args)
+    state = {"modes_enabled": config.modes_enabled, "input_mode": config.input_mode,
+             "active": config.modes["active"], "requested_exclusive": config.effective_exclusive}
+    if args.json:
+        print(json.dumps(state))
+    else:
+        print(f"Controller input mode: {config.input_mode}")
+        if args.selection is not None:
+            print("Saved; live ownership and readiness are reported by the running daemon.")
+    return 0
+
+
 def cmd_monitor(args) -> int:
     config = _load(args)
     pad = _wait_for_pad(config, args.timeout)
@@ -575,6 +594,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("conflicts", help="read potential overlap with compositor mappings")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_conflicts)
+
+    p = sub.add_parser("mode", help="inspect or opt into Game/OS controller ownership")
+    p.add_argument("selection", nargs="?", choices=("game", "os", "enable", "disable"))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_mode)
 
     p = sub.add_parser("monitor", help="print buttons as you press them")
     p.add_argument("--timeout", type=float, default=30.0)

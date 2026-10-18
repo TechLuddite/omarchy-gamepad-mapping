@@ -214,6 +214,18 @@ class Config:
         # or dropping the Bluetooth connection.
         self.enabled = bool(raw.get("enabled", True))
 
+        self._modes_present = "modes" in raw
+        modes = raw.get("modes", {})
+        if not isinstance(modes, dict):
+            raise ConfigError("modes must be an object")
+        if set(modes) - {"enabled", "active"}:
+            raise ConfigError("modes supports only enabled and active")
+        if not isinstance(modes.get("enabled", False), bool):
+            raise ConfigError("modes.enabled must be a boolean")
+        if modes.get("active", "game") not in ("game", "os"):
+            raise ConfigError("modes.active must be game or os")
+        self.modes = {"enabled": modes.get("enabled", False), "active": modes.get("active", "game")}
+
         raw_device = raw.get("device") or {}
         if not isinstance(raw_device, dict):
             raise ConfigError("'device' must be an object")
@@ -296,6 +308,29 @@ class Config:
     def exclusive(self) -> bool:
         return bool(self.device.get("exclusive", False))
 
+    @property
+    def modes_enabled(self) -> bool:
+        return self.modes["enabled"]
+
+    @property
+    def input_mode(self) -> str:
+        return self.modes["active"] if self.modes_enabled else "legacy"
+
+    @property
+    def effective_exclusive(self) -> bool:
+        if not self.modes_enabled:
+            return self.exclusive
+        return self.enabled and self.input_mode == "os"
+
+    def set_mode(self, selection: str) -> None:
+        self._modes_present = True
+        if selection in ("game", "os"):
+            self.modes.update(enabled=True, active=selection)
+        elif selection in ("enable", "disable"):
+            self.modes["enabled"] = selection == "enable"
+        else:
+            raise ConfigError("mode must be game, os, enable or disable")
+
     def setting(self, name: str) -> float:
         return float(self.settings.get(name, DEFAULT_SETTINGS[name]))
 
@@ -325,13 +360,16 @@ class Config:
     # -- serialisation ------------------------------------------------------
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "version": CONFIG_VERSION,
             "enabled": self.enabled,
             "device": self.device,
             "settings": self.settings,
             "bindings": [b.to_dict() for b in self.bindings],
         }
+        if self._modes_present or self.modes != {"enabled": False, "active": "game"}:
+            result["modes"] = dict(self.modes)
+        return result
 
     def save(self, path: Path | None = None) -> Path:
         target = Path(path or self.path)

@@ -220,6 +220,8 @@ class Gamepad:
         settings: dict,
         exclusive: bool = False,
         aliases: dict | None = None,
+        *,
+        guarded: bool = False,
     ):
         self.info = info
         self.path = info.path
@@ -231,13 +233,24 @@ class Gamepad:
         self._holders: dict[str, set[tuple[int, int]]] = {}
         self.apply(settings, aliases)
         self.fd = li.open_event_device(info.path)
-        self.grabbed = li.grab(self.fd, True) if exclusive else False
+        self.grabbed = li.grab(self.fd, True) if exclusive and not guarded else False
         # Axis tokens currently considered "pressed", keyed by axis code.
         self._axis_state: dict[int, set[str]] = {}
         # Key codes reported down, to compare against the real state after
         # the kernel drops events.
         self._keys_down: set[int] = set()
         self._resyncing = False
+        self.guarded = guarded
+        self.held: set[str] = set()
+        self.axes: dict[int, float] = {}
+        self.ready = not guarded
+        self.safety_error = ""
+        self.resync_generation = 0
+        self._sync_dropped = False
+        if guarded:
+            self.resync()
+            if exclusive:
+                self.retry_grab(True)
 
     def apply(self, settings: dict, aliases: dict | None = None) -> None:
         """Take new settings and aliases without reopening the device."""
@@ -261,6 +274,105 @@ class Gamepad:
             os.close(self.fd)
         finally:
             self.fd = -1
+
+    @property
+    def neutral(self) -> bool:
+        """No logical input is held; normal drift must not mute OS output."""
+        return not self.held
+
+    @property
+    def acquisition_neutral(self) -> bool:
+        if self.held:
+            return False
+        for code, fraction in self.axes.items():
+            if code in STICK_AXES and abs(fraction) > 0.15:
+                return False
+            if code in TRIGGER_AXES and fraction > 0.05:
+                return False
+            if code in HAT_AXES and fraction != 0:
+                return False
+        return True
+
+    def retry_grab(self, exclusive: bool) -> bool:
+        if exclusive == self.grabbed:
+            return True
+        if exclusive and self.guarded:
+            # Do not steal a release from a game that already saw the press.
+            if not self.resync() or not self.acquisition_neutral:
+                if not self.safety_error:
+                    active = [f"axis {code}={fraction:.3f}" for code, fraction in self.axes.items()
+                              if (code in STICK_AXES and abs(fraction) > 0.15)
+                              or (code in TRIGGER_AXES and fraction > 0.05)
+                              or (code in HAT_AXES and fraction != 0)]
+                    self.safety_error = "Waiting to grab: " + (", ".join(active) or "held " + ", ".join(sorted(self.held)))
+                return False
+        if not li.grab(self.fd, exclusive):
+            return False
+        self.grabbed = exclusive
+        if self.guarded:
+            self.resync()
+            # A press may race the initial snapshot and grab. Give the device
+            # back so its original consumer can still observe the release.
+            if exclusive and not self.ready and li.grab(self.fd, False):
+                self.grabbed = False
+        return self.grabbed == exclusive and (not exclusive or self.ready)
+
+    def _update_held(self) -> None:
+        self.held = {button_for_key_code(code) for code in self._keys_down}
+        for tokens in self._axis_state.values():
+            self.held.update(tokens)
+
+    def _snapshot(self) -> None:
+        state = li.read_key_state(self.fd, strict=True)
+        self._keys_down = {code for code in range(li.KEY_CNT) if li.bit_is_set(state, code)}
+        self._axis_state = {}
+        self.axes = {}
+        for code in self.info.abs_codes:
+            info = li.read_abs_info(self.fd, code)
+            if info is None:
+                raise OSError(f"Cannot snapshot axis {code}")
+            if code in {*STICK_AXES, *TRIGGER_AXES, *HAT_AXES} and info["max"] <= info["min"]:
+                raise OSError(f"Invalid axis range {code}")
+            self.info.abs_info[code] = info
+            self._decode_abs(code, info["value"])
+        self._update_held()
+        self._holders.clear()
+        for code in self._keys_down:
+            self._track((li.EV_KEY, code), self.aliases.get(button_for_key_code(code), button_for_key_code(code)), True)
+        for code, tokens in self._axis_state.items():
+            for token in tokens:
+                self._track((li.EV_ABS, code), self.aliases.get(token, token), True)
+
+    def resync(self) -> bool:
+        """Discard queued history and snapshot physical state before output."""
+        self.ready = False
+        self.resync_generation += 1
+        try:
+            # Bound work if a device continuously floods its queue.
+            for _ in range(64):
+                try:
+                    data = os.read(self.fd, li.EVENT_SIZE * 64)
+                except BlockingIOError:
+                    break
+                if not data:
+                    raise DeviceGone(self.path)
+                for offset in range(0, len(data) - li.EVENT_SIZE + 1, li.EVENT_SIZE):
+                    _sec, _usec, ev_type, code, _value = li.unpack_event(data, offset)
+                    if ev_type == li.EV_SYN and code == li.SYN_DROPPED:
+                        self._sync_dropped = True
+                    elif self._sync_dropped and ev_type == li.EV_SYN and code == li.SYN_REPORT:
+                        self._sync_dropped = False
+                if len(data) < li.EVENT_SIZE * 64:
+                    break
+            else:
+                self.safety_error = "Input queue has not drained"
+                return False
+            self._snapshot()
+            self.safety_error = ""
+            self.ready = not self._sync_dropped and self.neutral
+        except (OSError, DeviceGone) as exc:
+            self.safety_error = f"Input snapshot failed: {exc}"
+        return self.ready
 
     # -- decoding -----------------------------------------------------------
 
@@ -293,6 +405,11 @@ class Gamepad:
         return set()
 
     def _decode_abs(self, code: int, value: int) -> list[tuple[tuple, str, bool]]:
+        info = self.info.abs_info.get(code) or {}
+        low, high = info.get("min", 0), info.get("max", 0)
+        if high > low:
+            fraction = (value - low) / (high - low)
+            self.axes[code] = max(0.0, min(1.0, fraction)) if code in TRIGGER_AXES else max(-1.0, min(1.0, fraction * 2 - 1))
         if code in HAT_AXES:
             active = self._hat_tokens(code, value)
         elif code in TRIGGER_AXES:
@@ -356,6 +473,7 @@ class Gamepad:
 
     def read(self) -> list[tuple[str, bool]]:
         """Drain pending events. Returns (button_token, pressed) pairs."""
+        was_ready = self.ready
         changes: list[tuple[tuple, str, bool]] = []
         while True:
             try:
@@ -375,18 +493,25 @@ class Gamepad:
                 _sec, _usec, ev_type, code, value = li.unpack_event(data, offset)
                 if ev_type == li.EV_SYN:
                     if code == li.SYN_DROPPED:
+                        if self.guarded:
+                            self.ready = False
+                            self._sync_dropped = True
                         # Our buffer overflowed and events were lost, perhaps
                         # a release. Skip to the next report, then read the
                         # real state, so no button is left stuck down.
                         self._resyncing = True
                     elif code == li.SYN_REPORT and self._resyncing:
                         self._resyncing = False
+                        if self.guarded:
+                            self._sync_dropped = False
+                            self.resync()
+                            return []
                         changes.extend(self._resync())
                     continue
                 if self._resyncing:
                     continue
                 if ev_type == li.EV_KEY:
-                    if value == 2:  # kernel autorepeat; our own repeat handles it
+                    if value not in (0, 1):  # ignore autorepeat and malformed values
                         continue
                     changes.extend(self._decode_key(code, value == 1))
                 elif ev_type == li.EV_ABS:
@@ -395,6 +520,11 @@ class Gamepad:
             if len(data) < li.EVENT_SIZE * 64:
                 break
 
+        self._update_held()
+        if self.guarded and (not was_ready or self._sync_dropped):
+            if not self._sync_dropped:
+                self.resync()
+            return []
         events: list[tuple[str, bool]] = []
         for source, token, pressed in changes:
             token = self.aliases.get(token, token)

@@ -61,6 +61,26 @@ FocusScope {
   }
 
   property string statusMessage: ""
+  readonly property bool refreshing: mappingsProc.running || keyboardProc.running || shortcutsProc.running
+  readonly property bool configuredModesEnabled: service ? service.savedModes.enabled === true : false
+  readonly property string configuredMode: service ? service.savedModes.active : "game"
+  readonly property string modeDescription: {
+    if (!configuredModesEnabled) return "Mode switching is off. Existing mappings and sharing settings are unchanged."
+    if (configuredMode === "game") {
+      if (!service || !service.running) return "Game passthrough selected. The plugin is inactive."
+      if (service.inputMode !== "game" || service.inputStatus !== "passthrough") return "Switching to Game passthrough…"
+      return "Game passthrough: desktop actions are inactive and the controller is available to games."
+    }
+    if (!service || !service.running) return "OS selected. Start the plugin to activate desktop controls."
+    if (service.inputMode !== "os") return "Switching to OS controls…"
+    var status = service.inputStatus
+    if (status === "waiting_grab") return "OS waiting: another client owns the controller."
+    if (status === "waiting_neutral") return "Release buttons and center the sticks to activate OS controls." + (service.inputBlocker ? " " + service.inputBlocker : "")
+    if (status === "disabled") return "OS controls are disabled by the master switch."
+    if (status === "paused") return "OS controls are paused while recording a combo."
+    if (status === "disconnected") return "Connect the selected controller to activate OS controls."
+    return service.inputReady ? "OS active: desktop shortcuts." : "OS controls are waiting for the controller."
+  }
   property var shortcutOptions: []
   property string shortcutMessage: ""
   property bool shortcutsLoaded: false
@@ -129,6 +149,16 @@ FocusScope {
     mappingState = "loading"
     mappingsProc.running = true
   }
+
+  property string pendingMode: ""
+  function setInputMode(value) {
+    if (["game", "os", "enable", "disable"].indexOf(value) < 0) return
+    if (modeProc.running) { pendingMode = value; return }
+    if (service && service.capturing) service.cancelCapture()
+    modeProc.command = [root.cli, "mode", value]
+    modeProc.running = true
+  }
+
   function mappingsForInputs() {
     var inputs = {}
     for (var i = 0; i < draftCombo.length; i++) inputs[draftCombo[i]] = true
@@ -328,6 +358,19 @@ FocusScope {
   }
 
   Process {
+    id: modeProc
+    property string errorText: ""
+    onStarted: errorText = ""
+    stderr: StdioCollector { waitForEnd: true; onStreamFinished: modeProc.errorText = text.trim() }
+    onExited: function(exitCode) {
+      Qt.callLater(function() {
+        root.statusMessage = exitCode === 0 ? "" : (modeProc.errorText || "Mode update failed (exit code " + exitCode + ").")
+        if (root.pendingMode) { var next = root.pendingMode; root.pendingMode = ""; root.setInputMode(next) }
+      })
+    }
+  }
+
+  Process {
     id: mutateProc
     property bool clearsDraft: false
     stderr: StdioCollector {
@@ -468,7 +511,53 @@ FocusScope {
       }
     }
 
-    // ---- status: device, live buttons, master switch, reload -------
+    PanelSectionHeader { text: "CONTROLLER MODE"; foreground: root.foreground }
+
+    RowLayout {
+      Layout.fillWidth: true
+      spacing: Style.space(8)
+      Button {
+        objectName: "gameModeButton"
+        text: "Game"
+        selected: root.configuredModesEnabled && root.configuredMode === "game"
+        enabled: !modeProc.running
+        focusable: root.windowMode
+        bordered: true
+        foreground: root.foreground
+        onClicked: root.setInputMode("game")
+      }
+      Button {
+        objectName: "osModeButton"
+        text: "OS"
+        selected: root.configuredModesEnabled && root.configuredMode === "os"
+        enabled: !modeProc.running
+        focusable: root.windowMode
+        bordered: true
+        foreground: root.foreground
+        onClicked: root.setInputMode("os")
+      }
+      Button {
+        text: "Turn off modes"
+        visible: root.configuredModesEnabled
+        enabled: !modeProc.running
+        focusable: root.windowMode
+        bordered: true
+        foreground: root.foreground
+        onClicked: root.setInputMode("disable")
+      }
+    }
+
+    Text {
+      Layout.fillWidth: true
+      text: root.modeDescription
+      textFormat: Text.PlainText
+      color: root.foreground
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    // ---- status: device, live buttons, master switch, refresh --------
 
     RowLayout {
       Layout.fillWidth: true

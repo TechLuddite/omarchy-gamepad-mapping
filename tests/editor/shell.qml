@@ -91,6 +91,7 @@ ShellRoot {
     }
     onTriggered: {
       if (stage === 1 && !editor.shortcutOptions.length && !editor.shortcutMessage) return
+      if (stage > 0 && editor && editor.refreshing) return
       try {
         if (stage === 0) {
           check(fake.editor === null, "Checking bar state does not load editor")
@@ -362,8 +363,32 @@ ShellRoot {
         } else if (stage === 17) {
           if (compositorClose.running) return
           check(!panel.windowOpened && !fake.capturing, "Window close event releases capture")
+          fake.running = false
           panel.openWindow()
           check(panel.windowOpened, "Editor can reopen after a native window close")
+          editor.setInputMode("game")
+        } else if (stage === 18) {
+          fake._handle(JSON.stringify({event:"bindings", modes:{enabled:true,active:"game"}, bindings:fake.bindings}))
+          check(editor.configuredModesEnabled && editor.configuredMode === "game", "Game mode is explicit opt-in")
+          var game = find(editor, function(item) { return item.objectName === "gameModeButton" })
+          check(game.selected && !fake.running, "Saved choice is visible without starting a daemon")
+          fake._handle(JSON.stringify({event:"state", modes_enabled:true, input_mode:"game", input_ready:true, input_status:"passthrough"}))
+          fake.running = true
+          check(fake.inputMode === "game" && editor.modeDescription.indexOf("available to games") >= 0, "Actual passthrough status is shown")
+          editor.setInputMode("os")
+        } else if (stage === 19) {
+          fake._handle(JSON.stringify({event:"bindings", modes:{enabled:true,active:"os"}, bindings:fake.bindings}))
+          check(editor.configuredModesEnabled && editor.configuredMode === "os", "OS mode choice saved")
+          check(editor.modeDescription.indexOf("Switching") >= 0, "Requested OS choice does not claim ownership")
+          fake._handle(JSON.stringify({event:"state", modes_enabled:true, input_mode:"os", input_ready:false, input_status:"waiting_grab"}))
+          check(editor.modeDescription.indexOf("another client") >= 0, "Failed ownership is visible")
+          fake._handle(JSON.stringify({event:"state", modes_enabled:true, input_mode:"os", input_ready:false, input_status:"waiting_neutral"}))
+          check(editor.modeDescription.indexOf("center the sticks") >= 0, "Neutral guard is visible")
+          editor.setInputMode("disable")
+        } else if (stage === 20) {
+          fake._handle(JSON.stringify({event:"bindings", modes:{enabled:false,active:"os"}, bindings:fake.bindings}))
+          check(!editor.configuredModesEnabled && editor.bindings[0].combo === "A", "Turning modes off preserves saved assignments")
+          fake.running = false
           console.log("EDITOR CHECK PASS")
           Qt.quit()
         }

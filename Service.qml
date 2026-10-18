@@ -29,6 +29,12 @@ Item {
   // Master switch, persisted in the config file. Not called `enabled`, which
   // would override Item's own property of that name.
   property bool switchedOn: true
+  property var savedModes: ({enabled:false, active:"game"})
+  property string inputBlocker: ""
+  property bool modesEnabled: false
+  property string inputMode: "legacy"
+  property bool inputReady: false
+  property string inputStatus: "disconnected"
   // Transient mute, held only while the panel is recording a combo.
   property bool paused: false
   property string deviceName: ""
@@ -192,6 +198,11 @@ Item {
       if (root._wantPaused) daemon.signal(root.sigUsr1)
       break
     case "state":
+      root.inputBlocker = String(event.input_blocker || "")
+      if (event.modes_enabled !== undefined) root.modesEnabled = event.modes_enabled === true
+      if (event.input_mode !== undefined) root.inputMode = String(event.input_mode)
+      if (event.input_ready !== undefined) root.inputReady = event.input_ready === true
+      if (event.input_status !== undefined) root.inputStatus = String(event.input_status)
       root.connected = event.connected === true
       root.bindingCount = Number(event.bindings) || 0
       root.exclusive = event.exclusive === true
@@ -211,6 +222,7 @@ Item {
       root.heldButtons = Array.isArray(event.held) ? event.held : []
       break
     case "bindings":
+      root.savedModes = event.modes || ({enabled:false, active:"game"})
       root.bindings = Array.isArray(event.bindings) ? event.bindings : []
       root.deviceAliases = event.aliases || {}
       root.layout = String(event.layout || "auto")
@@ -239,6 +251,8 @@ Item {
     case "stopped":
       root.running = false
       root.ready = false
+      root.inputReady = false
+      root.inputStatus = "disconnected"
       break
     }
   }
@@ -280,6 +294,14 @@ Item {
         root._restartDelay = Math.min(root._restartDelay * 2, root.restartCeilingMs)
       }
       restartTimer.restart()
+    }
+  }
+
+  Process {
+    id: modeCommand
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim()) root.lastError = text.trim()
     }
   }
 
@@ -339,6 +361,10 @@ Item {
         connected: root.connected,
         enabled: root.switchedOn,
         paused: root.paused,
+        modes_enabled: root.modesEnabled,
+        input_mode: root.inputMode,
+        input_ready: root.inputReady,
+        input_status: root.inputStatus,
         device: root.deviceName,
         bindings: root.bindingCount,
         exclusive: root.exclusive,
@@ -350,6 +376,15 @@ Item {
     function reload(): string {
       root.reload()
       return "ok"
+    }
+
+    function mode(selection: string): string {
+      if (["game", "os", "enable", "disable"].indexOf(selection) < 0) return "invalid mode"
+      if (modeCommand.running) return "mode change in progress"
+      if (root.capturing) root.cancelCapture()
+      modeCommand.command = [root.cli, "mode", selection]
+      modeCommand.running = true
+      return "requested"
     }
 
     function restart(): string {
