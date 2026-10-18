@@ -467,6 +467,57 @@ separately from a successful read containing no bindings. The helper never
 selects a different session, changes compositor mappings or writes mapper
 settings.
 
+### Named OS mapping profiles
+
+Profiles keep several sets of OS button mappings and pointer settings. They do
+not change the global mode, device matching, exclusive setting, master switch or
+chord timing. Game Mode remains passthrough; selecting an OS profile while in
+Game Mode only changes which mappings will be ready when you return to OS Mode.
+
+The editor's **OS profile** selector chooses an existing profile. Enter a name
+and choose **Copy current** to keep a separate copy and select it, or **Rename
+current** to change its name. Finish or Clear a binding draft first, and Apply
+or Reset unsaved pointer settings. Game Mode shows a read-only passthrough
+summary with the remembered OS profile. Profile deletion is available through
+the CLI after selecting a different profile.
+
+```bash
+controller-control profile list --json
+controller-control profile create Travel  # clone current mappings and select Travel
+controller-control profile use Current
+controller-control profile rename Travel Couch
+controller-control profile delete Couch  # select a different profile first
+```
+
+Existing configs remain in their original single-profile structure until a
+successful explicit profile operation. Listing profiles shows an implicit
+`Current` without writing or migrating anything. Creating the first new profile
+keeps the original mappings in `Current` and selects a separate clone. Names
+are trimmed, case sensitive, limited to 64 characters and cannot contain control
+characters. The active or last remaining profile cannot be deleted.
+
+Profile operations save one config atomically, then notify the daemon to reload.
+Adding or removing a binding edits the active profile. Its `bindings` and
+`pointer` remain at the top level for compatibility, alongside:
+
+```json
+"profiles": {
+  "active": "Travel",
+  "items": {
+    "Current": {"bindings": [], "pointer": {}},
+    "Travel": {"bindings": [], "pointer": {}}
+  }
+}
+```
+
+When present, top-level bindings and pointer settings take precedence for the
+active profile, so manual edits cannot be replaced by an older saved snapshot.
+Absent top-level fields fall back to that profile's snapshot. Use `profile use`
+to switch: manually changing only `profiles.active` leaves the existing top-level
+settings authoritative. All inactive profiles are validated too. Older versions
+can read the active mappings, but an older writer that removes unknown fields
+can discard profile metadata; keep a backup when switching versions.
+
 ## How chords are resolved
 
 - Bindings fire on **press**. A chord that has fired never fires one of its

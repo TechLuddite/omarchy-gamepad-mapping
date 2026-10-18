@@ -113,7 +113,8 @@ class Daemon:
                 "requested_exclusive": self.config.effective_exclusive,
                 "effective_exclusive": bool(self.pads) and all(p.grabbed for p in self.pads.values()),
                 "pointer_enabled": self.pointer.settings.enabled,
-                "pointer_status": self.pointer_status}
+                "pointer_status": self.pointer_status,
+                "active_profile": self.config.active_profile}
 
     @property
     def pointer_status(self) -> str:
@@ -230,6 +231,7 @@ class Daemon:
             aliases=self.config.aliases,
             modes=self.config.modes or {"enabled": False, "active": "game"},
             pointer=self.config.pointer,
+            profiles={"active": self.config.active_profile, "names": self.config.profile_names()},
             bindings=[
                 {**b.to_dict(), "label": b.label(layout)} for b in self.config.bindings
             ],

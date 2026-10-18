@@ -83,7 +83,24 @@ FocusScope {
     return service.inputReady ? "OS active: desktop shortcuts." : "OS controls are waiting for the controller."
   }
   property string settingsOperation: ""
-  readonly property bool settingsBusy: settingsOperation !== "" || modeProc.running || mutateProc.running || pointerProc.running
+  readonly property bool settingsBusy: settingsOperation !== "" || modeProc.running || mutateProc.running || pointerProc.running || profileProc.running
+  readonly property string activeProfile: service ? service.savedProfiles.active : "Current"
+  readonly property var profileNames: service ? service.savedProfiles.names : ["Current"]
+  readonly property bool profilesLoaded: service ? service.profilesLoaded : false
+  property string profileMessage: ""
+  property bool profileNameMissing: false
+  property string profileDeleteSelection: ""
+  property string deleteProfileTarget: ""
+  property string deleteProfileReplacement: ""
+  onActiveProfileChanged: { cancelProfileDelete(); profileDeleteSelection = "" }
+  onProfileNamesChanged: cancelProfileDelete()
+  onProfilesLoadedChanged: if (!profilesLoaded) cancelProfileDelete()
+  onConfiguredModeChanged: cancelProfileDelete()
+  onConfiguredModesEnabledChanged: cancelProfileDelete()
+  onCapturingChanged: cancelProfileDelete()
+  onDraftComboChanged: cancelProfileDelete()
+  onPointerDirtyChanged: cancelProfileDelete()
+  readonly property bool profileEditingVisible: !configuredModesEnabled || configuredMode !== "game"
   property var pointerSaved: pointerDefaults()
   property var pointerDraft: pointerDefaults()
   property string pointerLeftSource: "L2"
@@ -269,12 +286,90 @@ FocusScope {
 
   property string pendingMode: ""
   function setInputMode(value) {
+    cancelProfileDelete()
     if (["game", "os", "enable", "disable"].indexOf(value) < 0) return
     if (settingsBusy) { pendingMode = value; return }
     if (service && service.capturing) service.cancelCapture()
     settingsOperation = "mode"
     modeProc.command = [root.cli, "mode", value]
     modeProc.running = true
+  }
+
+  function changeProfile(operation, name) {
+    if (["use", "create", "rename"].indexOf(operation) < 0 || settingsBusy) return
+    cancelProfileDelete()
+    if (!profileChangeAllowed()) return
+    var selected = name.trim()
+    if (!selected) {
+      profileMessage = ""
+      profileNameMissing = true
+      profileNameField.forceActiveFocus()
+      return
+    }
+    profileNameMissing = false
+    profileMessage = ""
+    pointerRevision++
+    settingsOperation = "profile"
+    profileProc.operation = operation
+    profileProc.command = [root.cli, "profile", operation]
+      .concat(operation === "rename" ? [activeProfile, selected] : [selected])
+    profileProc.running = true
+  }
+
+  function profileChangeAllowed() {
+    if (settingsBusy) return false
+    if (!profileEditingVisible) {
+      profileMessage = "Game uses passthrough. Select OS to change its profile."
+      return false
+    }
+    if (!profilesLoaded) {
+      profileMessage = "Wait for settings to finish loading before changing profiles."
+      return false
+    }
+    if (capturing || draftCombo.length || draftAction.trim() || draftDescription.trim()) {
+      profileMessage = "Finish or Clear the current binding before changing OS profiles."
+      return false
+    }
+    if (pointerDirty) {
+      profileMessage = "Apply or Reset pointer settings before changing OS profiles."
+      return false
+    }
+    return true
+  }
+
+  function cancelProfileDelete() {
+    deleteProfileTarget = ""
+    deleteProfileReplacement = ""
+  }
+
+  function requestProfileDelete() {
+    cancelProfileDelete()
+    if (!profileChangeAllowed()) return
+    var others = profileNames.filter(function(name) { return name !== root.activeProfile })
+    if (!others.length) {
+      profileMessage = "Keep at least one OS profile."
+      return
+    }
+    profileMessage = ""
+    deleteProfileTarget = profileDeleteSelection || activeProfile
+    deleteProfileReplacement = deleteProfileTarget === activeProfile ? others[0] : activeProfile
+  }
+
+  function confirmProfileDelete() {
+    var target = deleteProfileTarget
+    var replacement = deleteProfileReplacement
+    if (!target || profileNames.indexOf(target) < 0 || !replacement || target === replacement ||
+        profileNames.indexOf(replacement) < 0 || !profileChangeAllowed()) {
+      cancelProfileDelete()
+      return
+    }
+    cancelProfileDelete()
+    profileMessage = ""
+    pointerRevision++
+    settingsOperation = "profile"
+    profileProc.operation = "delete"
+    profileProc.command = [root.cli, "profile", "delete", target].concat(target === activeProfile ? ["--switch-to", replacement] : [])
+    profileProc.running = true
   }
 
   function mappingsForInputs() {
@@ -360,7 +455,7 @@ FocusScope {
   }
 
   function beginCapture() {
-    if (!service || !connected) return
+    if (!service || !connected || bindingWritesBlocked || mutateProc.running || _queue.length) return
     root.statusMessage = ""
     root.draftCombo = []
     service.startCapture()
@@ -475,6 +570,23 @@ FocusScope {
     mutateProc.clearsDraft = job.clearsDraft
     mutateProc.command = job.args
     mutateProc.running = true
+  }
+
+  Process {
+    id: profileProc
+    property string operation: ""
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim()) root.profileMessage = text.trim()
+    }
+    onExited: function(exitCode) {
+      root.settingsOperation = ""
+      if (exitCode === 0) {
+        root.profileMessage = ""
+        if (operation !== "use") profileNameField.text = ""
+        if (root.pendingMode) { var next = root.pendingMode; root.pendingMode = ""; root.setInputMode(next) }
+      } else if (!root.profileMessage) root.profileMessage = "Could not change the OS profile."
+    }
   }
 
   Process {
@@ -699,6 +811,185 @@ FocusScope {
       text: root.modeDescription
       textFormat: Text.PlainText
       color: root.foreground
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    PanelSectionHeader { text: "OS PROFILE"; foreground: root.foreground }
+
+    Text {
+      objectName: "gameProfileSummary"
+      Layout.fillWidth: true
+      visible: !root.profileEditingVisible
+      text: root.profilesLoaded ? "Passthrough · OS profile: " + root.activeProfile : "Loading OS profile…"
+      textFormat: Text.PlainText
+      color: root.foreground
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    ColumnLayout {
+      objectName: "profileSettingsForm"
+      Layout.fillWidth: true
+      visible: root.profileEditingVisible
+      enabled: !root.settingsBusy && root.profilesLoaded
+      spacing: Style.space(8)
+
+      SearchableDropdown {
+        id: profilePicker
+        objectName: "osProfilePicker"
+        Layout.fillWidth: true
+        showLabel: false
+        value: ""
+        options: root.profileNames
+        triggerLabel: "OS profile: " + root.activeProfile
+        placeholderText: "Search OS profiles…"
+        foreground: root.foreground
+        onChanged: function(value) {
+          root.changeProfile("use", value)
+          profilePicker.value = ""
+        }
+      }
+
+      Text {
+        Layout.fillWidth: true
+        text: "New profile name"
+        color: root.foreground
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      TextField {
+        id: profileNameField
+        onTextChanged: {
+          root.cancelProfileDelete()
+          if (text.trim()) root.profileNameMissing = false
+        }
+        objectName: "profileNameField"
+        Layout.fillWidth: true
+        maximumLength: 64
+        placeholderText: "Name for the new profile"
+        foreground: root.foreground
+        onAccepted: root.changeProfile("create", text)
+      }
+
+      Text {
+        objectName: "profileNameError"
+        Layout.fillWidth: true
+        visible: root.profileNameMissing
+        text: "Enter a name for the new profile."
+        color: Commons.Color.urgent
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(8)
+        Button {
+          objectName: "copyProfileButton"
+          text: "Create profile"
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.changeProfile("create", profileNameField.text)
+        }
+        Button {
+          objectName: "renameProfileButton"
+          text: "Rename current"
+          enabled: profileNameField.text.trim() !== "" && profileNameField.text.trim() !== root.activeProfile
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.changeProfile("rename", profileNameField.text)
+        }
+      }
+
+      Dropdown {
+        objectName: "deleteProfilePicker"
+        Layout.fillWidth: true
+        label: "Profile to delete"
+        options: root.profileNames
+        value: root.profileDeleteSelection || root.activeProfile
+        foreground: root.foreground
+        onChanged: function(value) { root.cancelProfileDelete(); root.profileDeleteSelection = value }
+      }
+      Button {
+        objectName: "deleteProfileButton"
+        text: "Delete profile"
+        enabled: root.profileNames.length > 1 && !root.deleteProfileTarget
+        focusable: root.windowMode
+        bordered: true
+        foreground: root.foreground
+        onClicked: root.requestProfileDelete()
+      }
+
+      Text {
+        Layout.fillWidth: true
+        visible: root.profileNames.length === 1 || root.deleteProfileTarget !== ""
+        text: root.deleteProfileTarget
+          ? "Delete “" + root.deleteProfileTarget + "” and its saved mappings and pointer settings? Switch to “" + root.deleteProfileReplacement + "”."
+          : "Keep at least one OS profile."
+        textFormat: Text.PlainText
+        color: root.foreground
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Dropdown {
+        objectName: "replacementProfilePicker"
+        Layout.fillWidth: true
+        visible: root.deleteProfileTarget === root.activeProfile && root.deleteProfileTarget !== ""
+        label: "Switch to"
+        options: root.profileNames.filter(function(name) { return name !== root.deleteProfileTarget })
+        value: root.deleteProfileReplacement
+        foreground: root.foreground
+        onChanged: function(value) { root.deleteProfileReplacement = value }
+      }
+      RowLayout {
+        Layout.fillWidth: true
+        visible: root.deleteProfileTarget !== ""
+        spacing: Style.space(8)
+        Button {
+          objectName: "confirmDeleteProfileButton"
+          text: "Confirm delete"
+          focusable: root.windowMode
+          bordered: true
+          foreground: Commons.Color.urgent
+          onClicked: root.confirmProfileDelete()
+        }
+        Button {
+          objectName: "cancelDeleteProfileButton"
+          text: "Cancel"
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.cancelProfileDelete()
+        }
+      }
+
+      Text {
+        Layout.fillWidth: true
+        text: "Create a separate profile starting with “" + root.activeProfile + "” mappings and pointer settings. The original stays unchanged."
+        textFormat: Text.PlainText
+        color: Qt.darker(root.foreground, 1.5)
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    Text {
+      objectName: "profileMessage"
+      Layout.fillWidth: true
+      visible: root.profileEditingVisible && root.profileMessage !== ""
+      text: root.profileMessage
+      textFormat: Text.PlainText
+      color: Commons.Color.urgent
       wrapMode: Text.WordWrap
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -1180,7 +1471,7 @@ FocusScope {
               ? root.comboText(root.draftCombo)
               : "1. Record combo")
         tooltipText: "Record a combo (r)"
-        enabled: root.connected
+        enabled: root.connected && !root.settingsBusy
         selected: root.capturing || root.draftCombo.length > 0
         bordered: true
         foreground: root.foreground
@@ -1296,6 +1587,7 @@ FocusScope {
 
     TextField {
       id: actionField
+        onTextChanged: root.cancelProfileDelete()
       Layout.fillWidth: true
       foreground: root.foreground
       text: root.draftAction
@@ -1310,6 +1602,7 @@ FocusScope {
 
     TextField {
       id: descriptionField
+        onTextChanged: root.cancelProfileDelete()
       Layout.fillWidth: true
       foreground: root.foreground
       text: root.draftDescription

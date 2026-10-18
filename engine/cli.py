@@ -214,6 +214,31 @@ def cmd_list(args) -> int:
     return 0
 
 
+def cmd_profile(args) -> int:
+    if args.profile_command == "list":
+        config = _load(args)
+        result = {"active": config.active_profile, "names": config.profile_names()}
+        if args.json:
+            print(json.dumps(result))
+        else:
+            for name in result["names"]:
+                print(f"{'*' if name == result['active'] else ' '} {name}")
+        return 0
+    with _edit(args) as config:
+        if args.profile_command == "create":
+            name = config.profile_create(args.name)
+        elif args.profile_command == "use":
+            name = config.profile_use(args.name)
+        elif args.profile_command == "rename":
+            name = config.profile_rename(args.old, args.new)
+        else:
+            name = config.profile_delete(args.name, switch_to=args.switch_to)
+        config.save()
+    _notify_daemon(signal.SIGHUP)
+    print(f"profile {args.profile_command}: {name}")
+    return 0
+
+
 def cmd_conflicts(args) -> int:
     from .conflicts import report
 
@@ -608,6 +633,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--config", help=f"config file (default: {CONFIG_PATH})")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("profile", help="manage named OS mapping profiles")
+    profiles = p.add_subparsers(dest="profile_command", required=True)
+    item = profiles.add_parser("list", help="list profiles without migrating legacy config")
+    item.add_argument("--json", action="store_true")
+    item.set_defaults(func=cmd_profile)
+    for action in ("create", "use", "delete"):
+        item = profiles.add_parser(action)
+        item.add_argument("name")
+        if action == "delete":
+            item.add_argument("--switch-to", help="explicit replacement when deleting the active profile")
+        item.set_defaults(func=cmd_profile)
+    item = profiles.add_parser("rename")
+    item.add_argument("old")
+    item.add_argument("new")
+    item.set_defaults(func=cmd_profile)
 
     p = sub.add_parser("shortcuts", help="list replayable live Hyprland shortcuts as JSON")
     p.set_defaults(func=cmd_shortcuts)

@@ -46,6 +46,54 @@ pointer_path = Path(os.environ['HOME']) / 'pointer.json'
 pointer_defaults = {'enabled': False, 'pointer_stick': 'left', 'scroll_stick': 'right',
     'speed': 900, 'scroll_speed': 8, 'dead_zone': .18, 'scroll_dead_zone': .35,
     'invert_scroll': False, 'buttons': {'A': 'left', 'X': 'left', 'B': 'right'}}
+profile_path = Path(os.environ['HOME']) / 'profiles.json'
+def current_config():
+    config = {'bindings': [{'combo': 'B', 'keys': 'RETURN'}], 'device': {'layout': 'auto', 'aliases': {'A': 'B', 'B': 'Y'}}}
+    state = Path(os.environ['HOME']) / 'mode.json'
+    if state.exists(): config['modes'] = json.loads(state.read_text())
+    config['pointer'] = json.loads(pointer_path.read_text()) if pointer_path.exists() else pointer_defaults
+    if profile_path.exists(): config['profiles'] = json.loads(profile_path.read_text())
+    return config
+if sys.argv[1:] == ['fixture-snapshot']:
+    config = current_config()
+    profiles = config.get('profiles', {'active':'Current','items':{'Current':{}}})
+    print(json.dumps({'event':'bindings','profiles':{'active':profiles['active'],'names':sorted(profiles['items'])},
+                     'modes':config.get('modes',{'enabled':False,'active':'game'}), 'pointer':config['pointer']}))
+    raise SystemExit(0)
+if sys.argv[1:] == ['profile', 'list', '--json']:
+    profiles = current_config().get('profiles', {'active': 'Current', 'items': {'Current': {}}})
+    print(json.dumps({'active': profiles['active'], 'names': sorted(profiles['items'])}))
+    raise SystemExit(0)
+if len(sys.argv) >= 4 and sys.argv[1] == 'profile':
+    config = current_config()
+    snapshot = {'bindings': config['bindings'], 'pointer': config['pointer']}
+    profiles = config.get('profiles', {'active': 'Current', 'items': {'Current': snapshot}})
+    profiles['items'][profiles['active']] = snapshot
+    operation, name = sys.argv[2], sys.argv[3]
+    if operation == 'create':
+        if name in profiles['items']:
+            print('Profile already exists', file=sys.stderr)
+            sys.exit(1)
+        profiles['items'][name] = json.loads(json.dumps(snapshot))
+        profiles['active'] = name
+    elif operation == 'rename':
+        renamed = sys.argv[4]
+        profiles['items'][renamed] = profiles['items'].pop(name)
+        if profiles['active'] == name: profiles['active'] = renamed
+    elif operation == 'use':
+        profiles['active'] = name
+    elif operation == 'delete':
+        if name == 'Next':
+            print('Fixture refused delete', file=sys.stderr)
+            sys.exit(1)
+        assert sys.argv[4] == '--switch-to' and profiles['active'] == name
+        profiles['active'] = sys.argv[5]
+        del profiles['items'][name]
+    else:
+        raise RuntimeError('Unexpected profile action')
+    profile_path.write_text(json.dumps(profiles))
+    pointer_path.write_text(json.dumps(profiles['items'][profiles['active']]['pointer']))
+    raise SystemExit(0)
 if sys.argv[1:] == ['pointer', '--json']:
     print(pointer_path.read_text() if pointer_path.exists() else json.dumps(pointer_defaults))
     raise SystemExit(0)
@@ -114,7 +162,7 @@ if sys.argv[1:3] == ['bind', 'Z']:
         assert Path(wayland_socket).is_absolute() and Path(wayland_socket).is_socket()
         env.update(QT_QPA_PLATFORM='wayland', WAYLAND_DISPLAY=wayland_socket)
     result = subprocess.run(['quickshell', '--no-color', '-p', str(root / 'shell.qml')],
-                            env=env, text=True, capture_output=True, timeout=20)
+                            env=env, text=True, capture_output=True, timeout=45)
     output = result.stdout + result.stderr
     print(output, end='')
     if 'EDITOR CHECK PASS' not in output:
@@ -123,13 +171,14 @@ if sys.argv[1:3] == ['bind', 'Z']:
     calls = (root / 'home/calls.jsonl').read_text()
     import json
     calls = [json.loads(line) for line in calls.splitlines()]
+    calls = [call for call in calls if call != ["fixture-snapshot"]]
     assert ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'] in calls, calls
     assert ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'] in calls, calls
     assert ["shortcuts"] in calls, calls
     assert ["keyboard-keys"] in calls, calls
     assert sum(call == ["conflicts", "--json"] for call in calls) >= 2, calls
     calls = [call for call in calls if call not in (["shortcuts"], ["keyboard-keys"], ["conflicts", "--json"])]
-    assert [call for call in calls if call[0] == "mode" and call != ["mode", "--json"]] == [["mode", "game"], ["mode", "os"], ["mode", "disable"], ["mode", "os"], ["mode", "game"], ["mode", "os"], ["mode", "disable"]], calls
+    assert [call for call in calls if call[0] == "mode" and call != ["mode", "--json"]] == [["mode", "game"], ["mode", "os"], ["mode", "disable"], ["mode", "os"], ["mode", "game"], ["mode", "os"], ["mode", "disable"], ["mode", "game"], ["mode", "os"]], calls
     calls = [call for call in calls if call[0] != "mode"]
     pointer_calls = [call for call in calls if call[0] == 'pointer' and '--set' in call]
     assert len(pointer_calls) == 2, pointer_calls
@@ -141,6 +190,15 @@ if sys.argv[1:3] == ['bind', 'Z']:
     assert json.loads(pointer_calls[1][2])['speed'] == 1337
     assert json.loads((root / 'home/pointer.json').read_text()) == applied
     calls = [call for call in calls if call[0] != "pointer"]
+    assert [call for call in calls if call[0] == 'profile' and call != ['profile', 'list', '--json']] == [
+        ['profile', 'create', 'Work'], ['profile', 'rename', 'Work', 'Couch'],
+        ['profile', 'create', 'Current'], ['profile', 'use', 'Current'],
+        ['profile', 'create', 'Next'], ['profile', 'use', 'Current'],
+        ['profile', 'use', 'Next'], ['profile', 'delete', 'Next', '--switch-to', 'Couch'],
+        ['profile', 'use', 'Couch'], ['profile', 'delete', 'Couch', '--switch-to', 'Current'], ['profile', 'delete', 'Next']], calls
+    profiles = json.loads((root / 'home/profiles.json').read_text())
+    assert profiles['active'] == 'Current' and set(profiles['items']) == {'Current', 'Next'}, profiles
+    calls = [call for call in calls if call[0] != "profile"]
     assert calls == [
         ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'],
         ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'],

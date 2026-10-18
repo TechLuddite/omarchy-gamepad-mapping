@@ -29,6 +29,8 @@ Item {
   // Master switch, persisted in the config file. Not called `enabled`, which
   // would override Item's own property of that name.
   property bool switchedOn: true
+  property var savedProfiles: ({active:"Current", names:["Current"]})
+  property bool profilesLoaded: false
   property var savedPointer: ({})
   property var savedModes: ({enabled:false, active:"game"})
   property string inputBlocker: ""
@@ -37,6 +39,7 @@ Item {
   property bool inputReady: false
   property string inputStatus: "disconnected"
   property string pointerStatus: "disabled"
+  property string activeProfile: "Current"
   // Transient mute, held only while the panel is recording a combo.
   property bool paused: false
   property string deviceName: ""
@@ -190,6 +193,7 @@ Item {
       return
     }
     if (!event || !event.event) return
+    if (event.active_profile !== undefined) root.activeProfile = String(event.active_profile)
 
     switch (event.event) {
     case "started":
@@ -225,6 +229,8 @@ Item {
       root.heldButtons = Array.isArray(event.held) ? event.held : []
       break
     case "bindings":
+      root.savedProfiles = event.profiles || ({active:"Current", names:["Current"]})
+      root.profilesLoaded = true
       root.savedPointer = event.pointer || {}
       root.savedModes = event.modes || ({enabled:false, active:"game"})
       root.bindings = Array.isArray(event.bindings) ? event.bindings : []
@@ -374,6 +380,7 @@ Item {
         input_ready: root.inputReady,
         input_status: root.inputStatus,
         pointer_status: root.pointerStatus,
+        active_profile: root.activeProfile,
         device: root.deviceName,
         bindings: root.bindingCount,
         exclusive: root.exclusive,

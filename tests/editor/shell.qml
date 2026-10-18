@@ -11,6 +11,7 @@ ShellRoot {
     id: fake
     running: true
     switchedOn: true
+    profilesLoaded: true
     deviceAliases: ({"A": "B", "B": "Y"})
     bindings: [{combo: "B", label: "B", keys: "RETURN", repeat: true, hold: false, enabled: true}]
     labelOverrides: ({"A": "B"})
@@ -67,13 +68,33 @@ ShellRoot {
     property int code: -1
     onExited: function(exitCode) { code = exitCode }
   }
+  Process {
+    id: snapshotProc
+    command: [fake.cli, "fixture-snapshot"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var event = JSON.parse(text)
+        event.bindings = fake.bindings
+        event.aliases = fake.deviceAliases
+        event.labels = fake.labelOverrides
+        fake._handle(JSON.stringify(event))
+      }
+    }
+  }
+  Connections {
+    target: timer.editor
+    function onSettingsBusyChanged() { if (timer.stage >= 17 && !timer.editor.settingsBusy) snapshotProc.running = true }
+  }
   TestCase { id: keys; when: false }
   Timer {
+    id: timer
     interval: 120
     running: true
     repeat: true
     property int stage: 0
     property int startupWaits: 0
+    property int ticks: 0
     readonly property var widget: widgetLoader.item
     property var panel: null
     property var editor: null
@@ -108,9 +129,12 @@ ShellRoot {
       keys.keyClick(Qt.Key_R); keys.keyClick(Qt.Key_2)
     }
     onTriggered: {
+      if (++ticks > 110) { console.error("STAGE TIMEOUT " + stage); Qt.quit(); return }
+      if (snapshotProc.running || (stage > 0 && editor && (editor.refreshing || editor.settingsBusy))) return
       if (stage === 1 && !editor.shortcutOptions.length && !editor.shortcutMessage) return
-      if (stage > 0 && editor && editor.refreshing) return
       try {
+        // Wait for real process completion, including slower native ARM runs.
+        if (stage > 0 && editor && editor.settingsBusy) return
         if (stage === 0) {
           check(fake.editor === null, "Checking bar state does not load editor")
           check(widget === null, "Launcher starts without any bar widget")
@@ -146,7 +170,7 @@ ShellRoot {
           check(editor.foreground.toString() === Commons.Color.popups.text.toString(), "Window uses popup foreground")
           check(editor.width >= 280 && editor.implicitHeight > 100, "Real form is laid out")
           check(editor.bindings.length === 1, "Daemon binding snapshot is used")
-          check(editor.shortcutOptions.length >= 2, "Fake live shortcuts loaded")
+          check(editor.shortcutOptions.length >= 2, "Fake live shortcuts loaded: " + editor.shortcutOptions.length + " / " + editor.shortcutMessage)
           editor.draftIsCommand = true
           var shortcutPicker = find(editor, function(item) { return item.label === "CURRENT SHORTCUTS (OPTIONAL)" })
           check(shortcutPicker !== null, "Shared searchable picker exists")
@@ -318,6 +342,8 @@ ShellRoot {
           check(editor.statusMessage === "fixture mutation failed", "Failed CLI mutation is visible")
           check(editor.draftCombo[0] === "A", "Failed mutation preserves the current draft")
           editor.removeBinding("Y")
+          editor.beginCapture()
+          check(!fake.capturing, "Queued binding writes prevent recording")
         } else if (stage === 11) {
           check(editor.statusMessage === "", "A later successful edit recovers")
           check(fake.reloads === 0 && editor.bindings === fake.bindings, "Daemon owns the binding snapshot and reload policy")
@@ -458,6 +484,138 @@ ShellRoot {
         } else if (stage === 28) {
           fake.savedModes = {enabled:false,active:"os"}
           check(!editor.configuredModesEnabled && editor.bindings[0].combo === "A", "Pointer edits preserve existing mappings and mode choice")
+          editor.clearDraft()
+          fake.profilesLoaded = true
+          check(editor.activeProfile === "Current" && editor.profileNames.length === 1, "Legacy config exposes implicit Current profile")
+          check(control("copyProfileButton").text === "Create profile" && control("copyProfileButton").enabled, "Create label is clear and blank submission can show feedback")
+          control("copyProfileButton").clicked()
+          check(editor.profileNameMissing && control("profileNameError").visible && control("profileNameField").activeFocus && !editor.settingsBusy, "Blank create shows an inline error and focuses the name without dispatch")
+          control("profileNameField").text = "   "
+          control("profileNameField").accepted()
+          check(editor.profileNameMissing && !editor.settingsBusy, "Whitespace and Enter use the same required-name feedback")
+          control("profileNameField").text = "Work"
+          check(!editor.profileNameMissing, "Typing a name clears the required-name error")
+          control("profileNameField").text = ""
+
+          editor.draftCombo = ["A"]
+          editor.changeProfile("create", "BlockedCombo")
+          check(editor.profileMessage.indexOf("Finish or Clear") === 0 && !editor.settingsBusy, "Recorded binding blocks profile changes")
+          editor.clearDraft()
+          editor.draftAction = "RETURN"
+          editor.changeProfile("use", "Current")
+          check(!editor.settingsBusy && action.text === "RETURN", "Manual action draft blocks switching and survives")
+          editor.clearDraft()
+          editor.draftDescription = "Unsaved label"
+          editor.changeProfile("create", "BlockedDescription")
+          check(!editor.settingsBusy && description.text === "Unsaved label", "Description-only draft blocks copying")
+          editor.clearDraft()
+          fake.capturing = true
+          editor.changeProfile("create", "BlockedCapture")
+          check(!editor.settingsBusy && fake.capturing, "Profile changes preserve active recording")
+          fake.capturing = false
+          editor.editPointerSetting("speed", 1449)
+          editor.changeProfile("create", "BlockedPointer")
+          check(editor.profileMessage.indexOf("Apply or Reset") === 0 && editor.pointerDirty && !editor.settingsBusy, "Pointer draft blocks copying with useful guidance")
+          editor.resetPointerDraft()
+          control("profileNameField").text = "Work"
+          control("copyProfileButton").clicked()
+          check(editor.settingsBusy, "Profile copy takes the settings writer immediately")
+          editor.removeBinding("B")
+          editor.beginCapture()
+          check(!fake.capturing, "Profile writer prevents starting recording")
+        } else if (stage === 29) {
+          if (editor.settingsBusy || editor.activeProfile !== "Work") return
+          check(editor.profileNames.join(",") === "Current,Work", "Copy retains original and selects named profile")
+          check(!editor.configuredModesEnabled && !editor.pointerDirty && editor.pointerSaved.speed === 1450 && editor.bindings[0].combo === "A", "Copy preserves global mode, mappings and pointer settings")
+          check(control("profileNameField").text === "", "Successful copy clears the name field")
+          control("profileNameField").text = "Couch"
+          control("renameProfileButton").clicked()
+        } else if (stage === 30) {
+          if (editor.settingsBusy || editor.activeProfile !== "Couch") return
+          check(editor.profileNames.join(",") === "Couch,Current", "Rename updates active profile and preserves original")
+          control("profileNameField").text = "Current"
+          control("copyProfileButton").clicked()
+        } else if (stage === 31) {
+          if (editor.settingsBusy) return
+          check(editor.activeProfile === "Couch" && control("profileNameField").text === "Current" && editor.profileMessage.indexOf("already exists") >= 0, "Failed copy preserves selection, name and error")
+          control("osProfilePicker").changed("Current")
+        } else if (stage === 32) {
+          if (editor.settingsBusy || editor.activeProfile !== "Current") return
+          check(editor.profileNames.join(",") === "Couch,Current" && !editor.pointerDirty, "Shared picker selects existing profile and refreshes settings")
+          editor.setInputMode("game")
+        } else if (stage === 33) {
+          if (editor.settingsBusy || editor.configuredMode !== "game") return
+          check(!control("profileSettingsForm").visible && control("gameProfileSummary").visible, "Game profile is read only")
+          check(control("gameProfileSummary").text === "Passthrough · OS profile: Current", "Game retains a named OS profile without a game remap")
+          editor.changeProfile("use", "Couch")
+          check(!editor.settingsBusy && editor.activeProfile === "Current", "Game summary cannot dispatch a profile switch")
+          editor.setInputMode("os")
+        } else if (stage === 34) {
+          if (editor.settingsBusy || editor.configuredMode !== "os") return
+          check(control("profileSettingsForm").visible && editor.activeProfile === "Current", "OS restores remembered profile editing")
+          control("profileNameField").text = "Next"
+          control("profileNameField").forceActiveFocus()
+          keys.keyClick(Qt.Key_Tab)
+          check(control("copyProfileButton").activeFocus, "Keyboard navigation reaches profile copy")
+          keys.keyClick(Qt.Key_Return)
+        } else if (stage === 35) {
+          if (editor.settingsBusy || editor.activeProfile !== "Next") return
+          check(editor.pointerSaved.speed === 1450 && editor.bindings[0].combo === "A" && editor.configuredMode === "os", "Keyboard copy preserves pointer, mapping and mode state")
+          control("deleteProfileButton").clicked()
+          control("replacementProfilePicker").changed("Current")
+          check(editor.deleteProfileReplacement === "Current", "User can choose the replacement profile")
+          control("replacementProfilePicker").changed("Couch")
+          check(editor.deleteProfileTarget === "Next" && editor.deleteProfileReplacement === "Couch" && !editor.settingsBusy, "First delete click only arms a named confirmation")
+          check(!control("deleteProfileButton").enabled && control("confirmDeleteProfileButton").visible, "Confirmation is a separate control below the first click")
+          control("cancelDeleteProfileButton").clicked()
+          check(!editor.deleteProfileTarget && editor.activeProfile === "Next", "Cancel keeps active profile and does not dispatch")
+          editor.requestProfileDelete()
+          editor.changeProfile("use", "Current")
+          check(!editor.deleteProfileTarget, "Switching cancels pending deletion")
+        } else if (stage === 36) {
+          if (editor.activeProfile !== "Current") return
+          editor.requestProfileDelete()
+          editor.draftCombo = ["A"]
+          check(!editor.deleteProfileTarget, "Binding draft cancels deletion")
+          editor.clearDraft()
+          editor.requestProfileDelete()
+          fake.capturing = true
+          check(!editor.deleteProfileTarget, "Capture cancels deletion")
+          fake.capturing = false
+          editor.requestProfileDelete()
+          fake.savedModes = {enabled:true,active:"game"}
+          check(!editor.deleteProfileTarget, "Mode change cancels deletion")
+          fake.savedModes = {enabled:true,active:"os"}
+          var names = editor.profileNames
+          fake.savedProfiles = {active:"Current",names:["Current"]}
+          editor.requestProfileDelete()
+          check(!editor.deleteProfileTarget && !control("deleteProfileButton").enabled && editor.profileMessage.indexOf("at least one") >= 0, "Last profile is protected")
+          fake.savedProfiles = {active:"Current",names:names}
+          editor.changeProfile("use", "Next")
+        } else if (stage === 37) {
+          if (editor.activeProfile !== "Next") return
+          editor.requestProfileDelete()
+          control("confirmDeleteProfileButton").clicked()
+          check(editor.settingsBusy && !editor.deleteProfileTarget, "Second click dispatches one delete and takes writer")
+        } else if (stage === 38) {
+          check(editor.activeProfile === "Next" && editor.profileNames.length === 3 && editor.profileMessage.indexOf("Fixture refused delete") >= 0, "Failed delete retains selection and profiles with useful error")
+          editor.changeProfile("use", "Couch")
+        } else if (stage === 39) {
+          if (editor.activeProfile !== "Couch") return
+          editor.requestProfileDelete()
+          check(editor.deleteProfileReplacement === "Current", "Confirmation names the replacement")
+          control("confirmDeleteProfileButton").clicked()
+          editor.confirmProfileDelete()
+        } else if (stage === 40) {
+          if (editor.activeProfile !== "Current") return
+          check(editor.profileNames.join(",") === "Current,Next", "Confirmed deletion removes selected profile and selects replacement")
+          check(editor.pointerSaved.speed === 1450 && editor.bindings[0].combo === "A" && editor.configuredMode === "os", "Delete preserves replacement settings and global mode")
+          control("deleteProfilePicker").changed("Next")
+          editor.requestProfileDelete()
+          check(editor.deleteProfileTarget === "Next" && editor.activeProfile === "Current", "Inactive deletion does not activate its target")
+          editor.confirmProfileDelete()
+        } else if (stage === 41) {
+          check(editor.activeProfile === "Current" && editor.profileMessage.indexOf("Fixture refused delete") >= 0, "Inactive delete failure preserves the active profile")
           console.log("EDITOR CHECK PASS")
           Qt.quit()
         }
