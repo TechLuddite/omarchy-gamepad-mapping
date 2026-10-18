@@ -179,6 +179,7 @@ controller-control doctor          # check permissions, config, and the pad
 controller-control devices         # what the kernel sees
 controller-control monitor         # print button tokens as you press them
 controller-control learn           # record one combo and print its token
+controller-control conflicts --json # read advisory overlap context
 controller-control list            # show configured bindings
 controller-control shortcuts       # replayable live shortcuts as JSON
 controller-control keyboard-keys   # standard keyboard keys as JSON
@@ -382,6 +383,39 @@ Bluetooth connection. It also notices the file changing, so a hand edit
 applies within `rescan_interval_s` (two seconds by default). Aliases, the
 d-pad source and the analog thresholds apply to a connected pad at once.
 
+## Existing compositor mappings
+
+The read-only context helper reports Hyprland bindings that may overlap an
+input token:
+
+```bash
+controller-control conflicts --json
+```
+
+Run it in the active Hyprland session. It returns
+JSON with `available`, `bindings` and `error`. Each binding includes a mapper
+`token`, numeric evdev `code`, original `key`, `description`, modifier bitmask,
+`submap` and `kind: "compositor"`. XKB keycodes are converted with the evdev
+plus-eight offset; `mouse:` codes are already evdev codes. Raw mouse Back is
+reported as `BACK_BUTTON`, preserving the legacy config alias `BACK → SELECT`.
+
+The editor refreshes this context when it opens or reloads bindings. It shows
+only mappings matching a selected draft input or a saved controller input,
+applying `device.aliases` once just as the input decoder does. A label such as
+`A → B` preserves both the raw compositor identity and the recorded mapper
+identity. Modifier names and submaps remain visible. Loading, an unavailable
+read and a successful empty result have distinct messages; refresh does not
+execute a binding or change controller settings.
+
+These entries describe potential overlap, not confirmed duplicate actions.
+Modifiers, submaps, input grabs and application behavior affect whether an
+external action fires. Named key aliases are best-effort physical key matches;
+the active keyboard layout can change the identity of a symbol binding. Native
+application mouse behavior is not enumerated. An unavailable read is reported
+separately from a successful read containing no bindings. The helper never
+selects a different session, changes compositor mappings or writes mapper
+settings.
+
 ## How chords are resolved
 
 - Bindings fire on **press**. A chord that has fired never fires one of its
@@ -461,6 +495,7 @@ python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
 python3 -m unittest discover -s tests -p test_catalog.py -v
 python3 -m unittest discover -s tests -p test_keyboard_catalog.py -v
+python3 -m unittest discover -s tests -p test_conflicts.py -v
 ```
 
 The isolated editor check uses the installed Omarchy UI kit and Quickshell

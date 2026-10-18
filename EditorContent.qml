@@ -69,6 +69,21 @@ FocusScope {
   property string autoDescription: ""
   property var keyboardOptions: []
   property string keyboardMessage: ""
+  readonly property var deviceAliases: service ? service.deviceAliases : ({})
+  property var compositorBindings: []
+  property string mappingState: "not_loaded"
+  property int unidentifiedMappings: 0
+  readonly property var matchingMappings: mappingsForInputs()
+  readonly property string mappingMessage: {
+    if (mappingState === "not_loaded") return "Check compositor overlaps to read the current session."
+    if (mappingState === "loading") return "Loading compositor mappings…"
+    if (mappingState === "unavailable") return "Compositor mappings unavailable. Check the active Hyprland session."
+    var incomplete = unidentifiedMappings ? " " + unidentifiedMappings + " bindings have no usable identity; this list is incomplete." : ""
+    if (service && service.exclusiveActive) return "Physical controller events are exclusively grabbed. These potential overlaps apply when sharing input." + incomplete
+    if (!compositorBindings.length) return "No recognized compositor input mappings were reported." + incomplete
+    if (!matchingMappings.length) return "No compositor mappings match the selected or saved inputs." + incomplete
+    return "Potential overlaps only: modifiers, submaps and input grabs affect whether both actions fire." + incomplete
+  }
 
   // Keyboard cursor over the binding list; -1 until an arrow is pressed.
   property int cursorIndex: -1
@@ -94,6 +109,7 @@ FocusScope {
   readonly property string cli: service ? service.cli : ""
 
   function refresh() {
+    loadMappings()
     shortcutsLoaded = false
     if (shortcutPicker.popupOpen) loadShortcuts()
   }
@@ -108,6 +124,62 @@ FocusScope {
       autoDescription = description
     }
   }
+  function loadMappings() {
+    if (!service || !cli || mappingsProc.running) return
+    mappingState = "loading"
+    mappingsProc.running = true
+  }
+  function mappingsForInputs() {
+    var inputs = {}
+    for (var i = 0; i < draftCombo.length; i++) inputs[draftCombo[i]] = true
+    for (var j = 0; j < bindings.length; j++) {
+      if (bindings[j].enabled === false) continue
+      var combo = bindings[j].combo
+      var tokens = Array.isArray(combo) ? combo : String(combo || "").split(/\s*\+\s*/)
+      for (var k = 0; k < tokens.length; k++) inputs[tokens[k]] = true
+    }
+    var matches = []
+    for (var n = 0; n < compositorBindings.length; n++) {
+      var row = compositorBindings[n]
+      if (!row || typeof row.token !== "string") continue
+      // Match the decoder's one-step device alias application, not a chain.
+      var recorded = Object.prototype.hasOwnProperty.call(deviceAliases, row.token)
+        ? deviceAliases[row.token] : row.token
+      if (!inputs[recorded]) continue
+      matches.push({ token: row.token, recorded: recorded, code: row.code,
+        description: row.description, modifiers: row.modifiers, submap: row.submap })
+    }
+    return matches
+  }
+
+  function acceptMappingReport(text) {
+    try {
+      var parsed = JSON.parse(text)
+      if (parsed.available !== true || !Array.isArray(parsed.bindings)) throw new Error("unavailable")
+      compositorBindings = parsed.bindings
+      unidentifiedMappings = Number(parsed.unidentified) || 0
+      mappingState = "available"
+    } catch (e) {
+      compositorBindings = []
+      mappingState = "unavailable"
+    }
+  }
+
+  function modifierContext(value) {
+    var mask = Number(value)
+    if (!isFinite(mask) || mask < 0 || Math.floor(mask) !== mask) return "Unknown modifiers"
+    var flags = [[1, "Shift held"], [2, "Caps lock active"], [4, "Ctrl held"],
+      [8, "Alt held"], [16, "Mod2 held"], [32, "Mod3 held"],
+      [64, "Super held"], [128, "Mod5 held"]]
+    var names = []
+    for (var i = 0; i < flags.length; i++) {
+      if (mask & flags[i][0]) names.push(flags[i][1])
+    }
+    var unknown = mask - (mask & 255)
+    if (unknown) names.push("Unknown modifiers 0x" + unknown.toString(16))
+    return names.length ? names.join(", ") : "No modifiers"
+  }
+
   function chooseShortcut(value) {
     for (var i = 0; i < shortcutOptions.length; i++) {
       var option = shortcutOptions[i]
@@ -294,6 +366,21 @@ FocusScope {
     onTextKey: function (t) {
       if (t === "r" || t === "R") root.beginCapture()
       else if ((t === "t" || t === "T") && root.service) root.service.toggleEnabled()
+    }
+  }
+
+  Process {
+    id: mappingsProc
+    command: [root.cli, "conflicts", "--json"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.acceptMappingReport(text)
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.compositorBindings = []
+        root.mappingState = "unavailable"
+      }
     }
   }
 
@@ -618,6 +705,55 @@ FocusScope {
     }
 
     // ---- new binding --------------------------------------------------
+
+    Button {
+      text: "Check compositor overlaps"
+      focusable: root.windowMode
+      bordered: true
+      foreground: root.foreground
+      onClicked: root.loadMappings()
+    }
+    PanelSectionHeader {
+      text: "EXISTING COMPOSITOR MAPPINGS"
+      foreground: root.foreground
+    }
+
+    Text {
+      Layout.fillWidth: true
+      text: root.mappingMessage
+      textFormat: Text.PlainText
+      color: Qt.darker(root.foreground, 1.5)
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Repeater {
+      model: root.mappingState === "available" ? root.matchingMappings : []
+      Text {
+        required property var modelData
+        Layout.fillWidth: true
+        text: "Potential overlap · " + root.comboText([modelData.token])
+          + (modelData.recorded !== modelData.token ? " → " + root.comboText([modelData.recorded]) : "")
+          + "\n" + modelData.description
+          + " · " + root.modifierContext(modelData.modifiers) + " · submap " + (modelData.submap || "default")
+        textFormat: Text.PlainText
+        color: root.foreground
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    Text {
+      Layout.fillWidth: true
+      text: "Only selected or saved input tokens are shown. Native application mouse behavior is not enumerated."
+      textFormat: Text.PlainText
+      color: Qt.darker(root.foreground, 1.5)
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
 
     PanelSectionHeader {
       text: root.draftExisting ? "EDIT BINDING" : "NEW BINDING"

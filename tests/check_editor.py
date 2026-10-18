@@ -53,6 +53,18 @@ if sys.argv[1:] == ['keyboard-keys']:
         raise SystemExit(1)
     print(KEYBOARD_RESPONSE)
     raise SystemExit(0)
+if sys.argv[1:] == ['conflicts', '--json']:
+    marker = Path(os.environ['HOME']) / 'mapping-read'
+    if not marker.exists():
+        marker.touch()
+        print(json.dumps({'available': False, 'bindings': [], 'error': 'Fixture unavailable'}))
+    else:
+        print(json.dumps({'available': True, 'error': '', 'bindings': [
+            {'token': 'A', 'code': 304, 'description': 'Raw south action', 'modifiers': 64, 'submap': 'desktop'},
+            {'token': 'B', 'code': 305, 'description': 'Raw east action', 'modifiers': 0, 'submap': ''},
+            {'token': 'KEY_ENTER', 'code': 28, 'description': 'Keyboard action', 'modifiers': 0, 'submap': ''},
+        ]}))
+    raise SystemExit(0)
 if sys.argv[1] not in ('bind', 'unbind'):
     raise SystemExit('Unexpected CLI command')
 if sys.argv[1:3] == ['bind', 'Z']:
@@ -87,7 +99,8 @@ if sys.argv[1:3] == ['bind', 'Z']:
     assert ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'] in calls, calls
     assert ["shortcuts"] in calls, calls
     assert ["keyboard-keys"] in calls, calls
-    calls = [call for call in calls if call not in (["shortcuts"], ["keyboard-keys"])]
+    assert sum(call == ["conflicts", "--json"] for call in calls) >= 2, calls
+    calls = [call for call in calls if call not in (["shortcuts"], ["keyboard-keys"], ["conflicts", "--json"])]
     assert calls == [
         ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'],
         ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'],

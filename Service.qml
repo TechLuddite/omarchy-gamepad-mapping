@@ -33,6 +33,7 @@ Item {
   property bool paused: false
   property string deviceName: ""
   property bool exclusive: false
+  property bool exclusiveActive: false
   property int bindingCount: 0
   property string lastError: ""
   readonly property bool enableBusy: enableProc.running
@@ -41,6 +42,8 @@ Item {
   // The full binding list, as the daemon last loaded it.
   property var bindings: []
   property string layout: "auto"
+  // Aliases are applied once by the input decoder.
+  property var deviceAliases: ({})
   // Tokens labelled differently under the current layout (Nintendo faces).
   property var labelOverrides: ({})
 
@@ -192,6 +195,7 @@ Item {
       root.connected = event.connected === true
       root.bindingCount = Number(event.bindings) || 0
       root.exclusive = event.exclusive === true
+      root.exclusiveActive = Array.isArray(event.devices) && event.devices.length > 0 && event.devices.every(function(d) { return d.grabbed === true })
       if (event.enabled !== undefined && !enableProc.running) root.switchedOn = event.enabled === true
       if (event.paused !== undefined) root.paused = event.paused === true
       if (Array.isArray(event.devices) && event.devices.length > 0)
@@ -208,6 +212,7 @@ Item {
       break
     case "bindings":
       root.bindings = Array.isArray(event.bindings) ? event.bindings : []
+      root.deviceAliases = event.aliases || {}
       root.layout = String(event.layout || "auto")
       root.labelOverrides = event.labels || {}
       break

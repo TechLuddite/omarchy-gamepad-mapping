@@ -11,7 +11,8 @@ ShellRoot {
     id: fake
     running: true
     switchedOn: true
-    bindings: [{combo: "A", label: "B", keys: "RETURN", repeat: true, hold: false, enabled: false}]
+    deviceAliases: ({"A": "B", "B": "Y"})
+    bindings: [{combo: "B", label: "B", keys: "RETURN", repeat: true, hold: false, enabled: true}]
     labelOverrides: ({"A": "B"})
     connected: true
     deviceName: "Fixture controller"
@@ -108,6 +109,7 @@ ShellRoot {
           check(editor.shortcutOptions.length === 0, "Opening the editor does not fetch shortcuts")
           editor.loadShortcuts()
           editor.loadKeyboard()
+          editor.loadMappings()
         } else if (stage === 1) {
           if (!editor.keyboardOptions.length) {
             if (!editor.keyboardMessage) return
@@ -157,6 +159,7 @@ ShellRoot {
           editor.chooseKeyboardKey("F5")
           check(editor.draftDescription === "F5", "Loaded action description follows replacement key")
           editor.clearDraft()
+          editor.refresh()
           editor.draftCombo = ["B"]
           editor.draftAction = "SUPER+"
           action.forceActiveFocus()
@@ -178,6 +181,28 @@ ShellRoot {
           check(point.y >= -1 && point.y + list.height <= editor.Window.window.height + 1, "Dropdown results fit inside a short window: " + point.y + " / " + list.height)
           picker.close()
           check(fake.reloads === 0 && editor.draftCombo.length === 0, "Saving clears draft without duplicate reload")
+          check(editor.mappingState === "available", "Read-only discovery recovers after unavailable")
+          fake._handle(JSON.stringify({event:"bindings", aliases:{A:"B",B:"Y"}, bindings:fake.bindings, labels:{A:"B"}}))
+          check(editor.deviceAliases.A === "B", "Alias context follows the real service event handler")
+          check(editor.matchingMappings.length === 1 && editor.matchingMappings[0].token === "A", "Raw A maps once to saved B; raw B maps elsewhere and is excluded")
+          check(editor.matchingMappings[0].recorded === "B" && editor.matchingMappings[0].modifiers === 64 && editor.matchingMappings[0].submap === "desktop", "Alias and compositor context retained")
+          var warning = find(editor, function(item) { return typeof item.text === "string" && item.text.indexOf("Potential overlap · B → B") === 0 })
+          check(warning !== null && warning.text.indexOf("Super held · submap desktop") >= 0, "Visible advisory shows readable modifiers and submap")
+          check(warning.text.indexOf("modifiers 64") < 0 && warning.text.indexOf("evdev") < 0, "Primary advisory omits implementation codes")
+          check(editor.modifierContext(0) === "No modifiers", "No-modifier mapping is readable")
+          check(editor.modifierContext(79) === "Shift held, Caps lock active, Ctrl held, Alt held, Super held", "Combined modifier context is readable")
+          check(editor.modifierContext(176) === "Mod2 held, Mod3 held, Mod5 held", "Other Hyprland modifiers retain names")
+          check(editor.modifierContext(320) === "Super held, Unknown modifiers 0x100", "Unknown bits are explicit")
+          editor.draftCombo = ["Y"]
+          check(editor.matchingMappings.length === 2, "Draft tokens add matching context without action-key inventory")
+          editor.draftAction = "CUSTOM+KEYS"
+          editor.draftDescription = "Keep custom input"
+          editor.acceptMappingReport('{"available":true,"bindings":[]}')
+          check(editor.mappingMessage.indexOf("No recognized") === 0, "Successful empty discovery differs from unavailable")
+          editor.acceptMappingReport('{"available":false,"bindings":[]}')
+          check(editor.mappingState === "unavailable" && editor.compositorBindings.length === 0, "Later unavailable response clears previous mappings")
+          check(action.text === "CUSTOM+KEYS" && description.text === "Keep custom input", "Context updates preserve editable custom input")
+          editor.refresh()
           editor.draftCombo = ["X"]
           editor.draftIsCommand = true
           editor.draftAction = "printf 'custom command'"
@@ -185,6 +210,7 @@ ShellRoot {
           editor.saveDraft()
         } else if (stage === 3) {
           check(fake.reloads === 0, "Manual command saved without duplicate reload")
+          check(editor.mappingState === "available", "Discovery recovers without disturbing manual save")
           editor.beginCapture()
           check(fake.capturing, "Capture started through stub")
           action.forceActiveFocus()

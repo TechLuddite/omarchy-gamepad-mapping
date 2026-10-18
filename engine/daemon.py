@@ -101,6 +101,7 @@ class Daemon:
             "bindings",
             layout=layout,
             labels=label_overrides(layout),
+            aliases=self.config.aliases,
             bindings=[
                 {**b.to_dict(), "label": b.label(layout)} for b in self.config.bindings
             ],

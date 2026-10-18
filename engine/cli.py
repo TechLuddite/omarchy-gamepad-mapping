@@ -211,6 +211,24 @@ def cmd_list(args) -> int:
     return 0
 
 
+def cmd_conflicts(args) -> int:
+    from .conflicts import report
+
+    context = report()
+    if args.json:
+        print(json.dumps(context))
+        return 0
+    if not context["available"]:
+        return fail(context["error"])
+    print("Existing compositor mappings (potential overlap only):")
+    for binding in context["bindings"]:
+        print(f" {binding['token']} [evdev {binding['code']}, modifiers {binding['modifiers']}, "
+              f"submap {binding['submap'] or 'default'}]: {binding['description']}")
+    if not context["bindings"]:
+        print(" No recognized mappings.")
+    return 0
+
+
 def cmd_monitor(args) -> int:
     config = _load(args)
     pad = _wait_for_pad(config, args.timeout)
@@ -553,6 +571,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("list", help="show configured bindings")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("conflicts", help="read potential overlap with compositor mappings")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_conflicts)
 
     p = sub.add_parser("monitor", help="print buttons as you press them")
     p.add_argument("--timeout", type=float, default=30.0)
