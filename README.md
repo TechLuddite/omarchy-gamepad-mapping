@@ -293,14 +293,35 @@ handles it exactly like a real shortcut) or `exec` (a shell command). Options:
 - `enabled: false` — keep a binding around without it firing.
 
 Key names are case-insensitive. Alongside Linux `KEY_*` names, the parser
-accepts common Hyprland/XKB spellings such as `bracketleft`, `bracketright`,
-`XF86AudioPause`, `XF86Calculator`, `XF86Eject`, `XF86KbdBrightnessDown`,
-`XF86KbdBrightnessUp`, `XF86KbdLightOnOff`, `XF86PowerOff`, `XF86TouchpadOff`,
-`XF86TouchpadOn` and `XF86TouchpadToggle`.
+accepts these aliases (including those supported before the recent additions):
+
+| Use | Accepted names |
+|---|---|
+| Super | `SUPER`, `META`, `WIN`, `CMD`, `MOD` |
+| Other modifiers | `CTRL`, `CONTROL`, `ALT`, `OPT`, `SHIFT` |
+| Enter and navigation | `RETURN`, `CR`, `ESCAPE`, `DEL`, `PGUP`, `PGDN`, `RETURN_KP` |
+| Print and punctuation | `PRINT`, `PRTSC`, `PRINTSCREEN`, `PERIOD`, `PLUS`, `bracketleft`, `bracketright` |
+| Volume | `XF86AudioRaiseVolume`, `XF86AudioLowerVolume`, `XF86AudioMute`, `XF86AudioMicMute` |
+| Playback | `XF86AudioPlay`, `XF86AudioPause`, `XF86AudioNext`, `XF86AudioPrev` |
+| Display brightness | `XF86MonBrightnessUp`, `XF86MonBrightnessDown` |
+| Keyboard lighting | `XF86KbdBrightnessDown`, `XF86KbdBrightnessUp`, `XF86KbdLightOnOff` |
+| Other system keys | `XF86Calculator`, `XF86Eject`, `XF86PowerOff` |
+| Touchpad | `XF86TouchpadOff`, `XF86TouchpadOn`, `XF86TouchpadToggle` |
 
 These aliases send Linux key codes, not characters. `bracketleft` and
 `bracketright` select the physical `LEFTBRACE` and `RIGHTBRACE` keys; the active
 keyboard layout determines the resulting symbols and compositor bindings.
+Omarchy's own bracket bindings use `code:34` / `code:35`; that raw XKB keycode
+syntax is still unsupported. The bracket aliases help hand-written controller
+configs rather than accepting those bindings verbatim.
+
+The touchpad aliases emit Linux codes 530–532 (XKB evdev keycodes 538–540).
+Those codes have touchpad symbols only in recent xkeyboard-config versions;
+on older keymaps the parser can accept a binding that has no effect.
+
+`XF86PowerOff` emits `KEY_POWER` (116), even as part of a controller chord.
+With logind's `HandlePowerKey=poweroff`, it can shut the machine down. Omarchy
+sets this to `ignore`; check your system's policy before using this key.
 
 **`settings`** are checked when the file loads. Each must be a number, and
 values that would make the daemon spin a core — a zero `repeat_interval_ms`
