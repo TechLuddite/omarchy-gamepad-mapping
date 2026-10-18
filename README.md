@@ -107,6 +107,9 @@ toggles the pad off and on without opening anything.
 
 The panel header carries the master switch, along with the buttons you are
 holding right now, so you can watch the pad answer while your hands are on it.
+Below it are two tabs. **Bindings** is the everyday view: your bindings, then
+the form to add or change one. **Advanced** holds the controller mode,
+profiles, the stick-as-mouse settings and the Hyprland overlap check.
 
 To add a binding: press **Record combo**, then press the buttons on the
 controller. Firing is muted while recording, so capturing a combo cannot also
@@ -120,8 +123,8 @@ that failed to run, a config that will not load — shows at the top of the
 panel until you dismiss it.
 
 The panel works from the keyboard too: up and down pick a binding, Enter edits
-it, `x` removes it, `r` records a combo, `t` flips the master switch, and Esc
-leaves a text field or closes the panel.
+it, `x` removes it, `r` records a combo, `t` flips the master switch, left and
+right switch between the tabs, and Esc leaves a text field or closes the panel.
 
 For an ordinary window with touchscreen-keyboard access, choose **Open window**
 in the panel, or run:
@@ -138,39 +141,26 @@ into view in a short window. Tab moves between controls in the window; popup Tab
 field, cancels recording, then closes, one step at a time. Disabling mapping
 leaves the editor usable.
 
-The optional **Current shortcuts** picker searches descriptions and key chords
-from the active Hyprland session. Selecting a row fills the editable Keys field;
-an empty or unchanged picker/loaded description is filled too; manual edits are retained. You can still type any supported custom key
-chord or switch to Command. Selection never runs the action, and saving still
-requires a recorded controller combo and **Save binding**.
+In Keys mode, **Pick one of your shortcuts or a key** fills the Keys field
+from a single searchable list: your current Hyprland shortcuts first, then 119
+standard keys (letters, digits, navigation, punctuation, F1–F24, modifiers and
+keypad keys). A shortcut fills the whole chord; a key picked after a trailing
+`+` keeps the modifiers you typed. An empty or automatically filled
+description follows the pick, while one you wrote stays. Picking never runs or
+saves anything: saving still needs a recorded combo and **Save binding**.
 
-The shortcut catalog loads when its dropdown first opens and is then cached.
-The explicit Reload button invalidates that cache and refreshes overlap context when available; opening the editor does not spawn catalog processes. It reads
-`hyprctl -j binds` directly, without relying on an Omarchy menu cache or copying
-commands. With no current session, a single available session is selected; with
-multiple sessions, set `HYPRLAND_INSTANCE_SIGNATURE` before launching the shell.
-An unavailable catalog does not prevent manual editing. This optional picker
-uses Omarchy's shared `SearchableDropdown` control and its keyboard navigation:
-In the ordinary window, Tab to the trigger, Enter to open, type to search, arrows to navigate, Enter to
-select, Escape to close.
+Both lists load the first time the picker opens, never when the editor opens,
+and the reload button refreshes the shortcuts. They come from
+`hyprctl -j binds` in the active session; with several sessions, set
+`HYPRLAND_INSTANCE_SIGNATURE` before launching the shell. Only global keyboard
+shortcuts with ordinary modifiers are listed: mouse, raw keycode, submap and
+device-specific bindings, and the press half of a press/release pair such as
+push-to-talk, are left out. If the shortcuts can't be read, the keys and manual
+entry still work.
 
-Only parser-supported, global keyboard shortcuts with ordinary modifier masks
-are listed. Mouse, raw keycode, submap, device-specific and special
-release/long-press bindings and the press side of a paired press/release action
-(such as push-to-talk) are omitted. Locked media/volume/brightness bindings are included. A virtual keyboard replays Linux
-key positions; keysym names and aliases such as `PLUS` can resolve differently
-on other layouts or require Shift. Check the resulting shortcut
-on your keyboard layout before relying on it. Several actions attached to the
-same chord are represented together and will retain the compositor's behavior.
-
-The optional **Standard key** picker provides 119 parser-validated keys,
-including letters, digits, navigation, punctuation, F1–F24, modifiers and keypad
-keys. Search by a friendly name or the canonical token. Selection fills the
-editable Keys field with one key; add modifiers there to build a custom chord.
-The description stays editable, and Command entry remains available. This
-catalog works without Hyprland and uses the same shared searchable UI control.
-It loads once when opened and is hidden in Command mode. Letters and punctuation use physical positions named for US layouts; for example,
-A may produce q on AZERTY. Picking a key after a trailing + retains typed modifiers.
+The virtual keyboard replays physical key positions, named for US layouts, so
+`A` may type q on AZERTY, and aliases such as `PLUS` can need Shift. Check a
+picked shortcut on your layout before relying on it.
 
 Everything is also available from the CLI:
 
@@ -470,8 +460,8 @@ JSON with `available`, `bindings` and `error`. Each binding includes a mapper
 plus-eight offset; `mouse:` codes are already evdev codes. Raw mouse Back is
 reported as `BACK_BUTTON`, preserving the legacy config alias `BACK → SELECT`.
 
-Choose **Check compositor overlaps** or the explicit **Reload** button to read
-this advisory context. Merely opening the editor does not query it. It shows
+Choose **Check Hyprland shortcuts** on the Advanced tab, or the reload button,
+to read this advisory context. Merely opening the editor does not query it. It shows
 only mappings matching a selected draft input or a saved controller input,
 applying `device.aliases` once just as the input decoder does. A label such as
 `A → B` preserves both the raw compositor identity and the recorded mapper
@@ -495,7 +485,7 @@ not change the global mode, device matching, exclusive setting, master switch or
 chord timing. Game Mode remains passthrough; selecting an OS profile while in
 Game Mode only changes which mappings will be ready when you return to OS Mode.
 
-The editor's **OS profile** selector chooses an existing profile. Enter a name
+The **Profiles** section of the Advanced tab chooses an existing profile. Enter a name
 and choose **Create profile** to keep a separate copy and select it, or **Rename
 current** to change its name. Finish or Clear a binding draft first, and Apply
 or Reset unsaved pointer settings. Game Mode shows a read-only passthrough

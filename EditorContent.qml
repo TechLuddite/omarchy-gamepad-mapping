@@ -19,7 +19,7 @@ FocusScope {
   signal focusRequested(var item)
   readonly property Item navigationItem: keyCatcher
   readonly property Item cursorRow: bindingRepeater.itemAt(cursorIndex)
-  readonly property Item focusScrollTarget: profilePicker.popupOpen ? profilePickerExtent : keyboardPicker.popupOpen ? keyboardPickerExtent : shortcutPicker.popupOpen ? shortcutPickerExtent : focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
+  readonly property Item focusScrollTarget: profilePicker.popupOpen ? profilePickerExtent : actionPicker.popupOpen ? actionPickerExtent : focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
   readonly property Item focusedControl: Window.window ? Window.window.activeFocusItem : null
   onFocusedControlChanged: {
     for (var item = focusedControl; item && item !== root; item = item.parent) {
@@ -120,7 +120,7 @@ FocusScope {
     if (status === "error") return "Pointer output is unavailable. Check controller permissions and reload."
     if (status === "requires_os") return "Pointer settings are saved; waiting for OS Mode."
     if (status === "ready") return "Pointer and scrolling are ready in OS Mode."
-    return "Pointer settings are saved. " + root.modeDescription
+    return "Pointer settings are saved."
   }
   property var shortcutOptions: []
   property string shortcutMessage: ""
@@ -136,7 +136,7 @@ FocusScope {
   property int unidentifiedMappings: 0
   readonly property var matchingMappings: mappingsForInputs()
   readonly property string mappingMessage: {
-    if (mappingState === "not_loaded") return "Check compositor overlaps to read the current session."
+    if (mappingState === "not_loaded") return ""
     if (mappingState === "loading") return "Loading compositor mappings…"
     if (mappingState === "unavailable") return "Compositor mappings unavailable. Check the active Hyprland session."
     var incomplete = unidentifiedMappings ? " " + unidentifiedMappings + " bindings have no usable identity; this list is incomplete." : ""
@@ -145,6 +145,26 @@ FocusScope {
     if (!matchingMappings.length) return "No compositor mappings match the selected or saved inputs." + incomplete
     return "Potential overlaps only: modifiers, submaps and input grabs affect whether both actions fire." + incomplete
   }
+
+  // "bindings" for everyday editing, "advanced" for modes, profiles,
+  // pointer and overlaps.
+  property string currentTab: "bindings"
+
+  // One picker for both catalogs: your Hyprland shortcuts, then plain keys.
+  readonly property var pickerOptions: {
+    var options = []
+    for (var i = 0; i < shortcutOptions.length; i++) {
+      var shortcut = shortcutOptions[i]
+      options.push({ value: "shortcut:" + shortcut.value, label: shortcut.label,
+        description: "Shortcut · " + (shortcut.description || shortcut.keys) })
+    }
+    for (var j = 0; j < keyboardOptions.length; j++) {
+      var key = keyboardOptions[j]
+      options.push({ value: "key:" + key.value, label: key.label, description: "Key · " + key.description })
+    }
+    return options
+  }
+  readonly property string pickerMessage: [shortcutMessage, keyboardMessage].filter(function (m) { return m !== "" }).join(" ")
 
   // Keyboard cursor over the binding list; -1 until an arrow is pressed.
   property int cursorIndex: -1
@@ -265,7 +285,7 @@ FocusScope {
   function refresh() {
     loadMappings()
     shortcutsLoaded = false
-    if (shortcutPicker.popupOpen) loadShortcuts()
+    if (actionPicker.popupOpen) loadShortcuts()
   }
   function loadShortcuts() {
     if (service && cli !== "" && !shortcutsLoaded && !shortcutsProc.running) shortcutsProc.running = true
@@ -436,6 +456,11 @@ FocusScope {
   function loadKeyboard() {
     if (service && cli !== "" && !keyboardOptions.length && !keyboardProc.running) keyboardProc.running = true
   }
+  function choosePicked(value) {
+    if (value.indexOf("shortcut:") === 0) chooseShortcut(value.slice(9))
+    else if (value.indexOf("key:") === 0) chooseKeyboardKey(value.slice(4))
+  }
+
   function chooseKeyboardKey(value) {
     for (var i = 0; i < keyboardOptions.length; i++) {
       var option = keyboardOptions[i]
@@ -458,6 +483,7 @@ FocusScope {
     if (!service || !connected || bindingWritesBlocked || mutateProc.running || _queue.length) return
     root.statusMessage = ""
     root.draftCombo = []
+    root.currentTab = "bindings"
     service.startCapture()
   }
 
@@ -469,6 +495,7 @@ FocusScope {
 
   // Load an existing binding into the form, flags and all, to change it.
   function editBinding(binding) {
+    root.currentTab = "bindings"
     root.statusMessage = ""
     root.draftCombo = String(binding.combo).split(" + ")
     root.draftIsCommand = !binding.keys
@@ -654,7 +681,10 @@ FocusScope {
     anchors.fill: parent
     // Text fields and focused buttons keep their normal editing/Tab keys.
     blocked: root.fieldFocused
-    onMoveRequested: function (dx, dy) { if (dy !== 0) root.moveCursor(dy) }
+    onMoveRequested: function (dx, dy) {
+      if (dy !== 0) root.moveCursor(dy)
+      else if (dx !== 0) root.currentTab = dx > 0 ? "advanced" : "bindings"
+    }
     onActivateRequested: root.activateCursor()
     onDeleteRequested: root.deleteAtCursor()
     onTabRequested: function (direction) {
@@ -743,8 +773,11 @@ FocusScope {
     width: parent.width
     spacing: Style.space(10)
 
+    // ---- header: title, device status, messages, tabs ----------------
+
     RowLayout {
       Layout.fillWidth: true
+      spacing: Style.space(8)
       Text {
         Layout.fillWidth: true
         text: "Controller Control"
@@ -769,397 +802,6 @@ FocusScope {
         onClicked: root.closeRequested()
       }
     }
-
-    PanelSectionHeader { text: "CONTROLLER MODE"; foreground: root.foreground }
-
-    RowLayout {
-      Layout.fillWidth: true
-      spacing: Style.space(8)
-      Button {
-        objectName: "gameModeButton"
-        text: "Game"
-        selected: root.configuredModesEnabled && root.configuredMode === "game"
-        enabled: !modeProc.running
-        focusable: root.windowMode
-        bordered: true
-        foreground: root.foreground
-        onClicked: root.setInputMode("game")
-      }
-      Button {
-        objectName: "osModeButton"
-        text: "OS"
-        selected: root.configuredModesEnabled && root.configuredMode === "os"
-        enabled: !modeProc.running
-        focusable: root.windowMode
-        bordered: true
-        foreground: root.foreground
-        onClicked: root.setInputMode("os")
-      }
-      Button {
-        text: "Turn off modes"
-        visible: root.configuredModesEnabled
-        enabled: !modeProc.running
-        focusable: root.windowMode
-        bordered: true
-        foreground: root.foreground
-        onClicked: root.setInputMode("disable")
-      }
-    }
-
-    Text {
-      Layout.fillWidth: true
-      text: root.modeDescription
-      textFormat: Text.PlainText
-      color: root.foreground
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    PanelSectionHeader { text: "OS PROFILE"; foreground: root.foreground }
-
-    Text {
-      objectName: "gameProfileSummary"
-      Layout.fillWidth: true
-      visible: !root.profileEditingVisible
-      text: root.profilesLoaded ? "Passthrough · OS profile: " + root.activeProfile : "Loading OS profile…"
-      textFormat: Text.PlainText
-      color: root.foreground
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    ColumnLayout {
-      objectName: "profileSettingsForm"
-      Layout.fillWidth: true
-      visible: root.profileEditingVisible
-      enabled: !root.settingsBusy && root.profilesLoaded
-      spacing: Style.space(8)
-
-      SearchableDropdown {
-        id: profilePicker
-        onPopupOpenChanged: if (popupOpen) Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) })
-        Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
-        popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
-        popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
-        Item { id: profilePickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
-        objectName: "osProfilePicker"
-        Layout.fillWidth: true
-        showLabel: false
-        value: ""
-        options: root.profileNames
-        triggerLabel: "OS profile: " + root.activeProfile
-        placeholderText: "Search OS profiles…"
-        foreground: root.foreground
-        onChanged: function(value) {
-          root.changeProfile("use", value)
-          profilePicker.value = ""
-        }
-      }
-
-      Text {
-        Layout.fillWidth: true
-        text: "New profile name"
-        color: root.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-
-      TextField {
-        id: profileNameField
-        onTextChanged: {
-          root.cancelProfileDelete()
-          if (text.trim()) root.profileNameMissing = false
-        }
-        objectName: "profileNameField"
-        Layout.fillWidth: true
-        maximumLength: 64
-        placeholderText: "Name for the new profile"
-        foreground: root.foreground
-        onAccepted: root.changeProfile("create", text)
-      }
-
-      Text {
-        objectName: "profileNameError"
-        Layout.fillWidth: true
-        visible: root.profileNameMissing
-        text: "Enter a name for the new profile."
-        color: Commons.Color.urgent
-        wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-
-      RowLayout {
-        Layout.fillWidth: true
-        spacing: Style.space(8)
-        Button {
-          objectName: "copyProfileButton"
-          text: "Create profile"
-          focusable: root.windowMode
-          bordered: true
-          foreground: root.foreground
-          onClicked: root.changeProfile("create", profileNameField.text)
-        }
-        Button {
-          objectName: "renameProfileButton"
-          text: "Rename current"
-          enabled: profileNameField.text.trim() !== "" && profileNameField.text.trim() !== root.activeProfile
-          focusable: root.windowMode
-          bordered: true
-          foreground: root.foreground
-          onClicked: root.changeProfile("rename", profileNameField.text)
-        }
-      }
-
-      Dropdown {
-        objectName: "deleteProfilePicker"
-        Layout.fillWidth: true
-        label: "Profile to delete"
-        options: root.profileNames
-        value: root.profileDeleteSelection || root.activeProfile
-        foreground: root.foreground
-        onChanged: function(value) { root.cancelProfileDelete(); root.profileDeleteSelection = value }
-      }
-      Button {
-        objectName: "deleteProfileButton"
-        text: "Delete profile"
-        enabled: root.profileNames.length > 1 && !root.deleteProfileTarget
-        focusable: root.windowMode
-        bordered: true
-        foreground: root.foreground
-        onClicked: root.requestProfileDelete()
-      }
-
-      Text {
-        Layout.fillWidth: true
-        visible: root.profileNames.length === 1 || root.deleteProfileTarget !== ""
-        text: root.deleteProfileTarget
-          ? "Delete “" + root.deleteProfileTarget + "” and its saved mappings and pointer settings? Switch to “" + root.deleteProfileReplacement + "”."
-          : "Keep at least one OS profile."
-        textFormat: Text.PlainText
-        color: root.foreground
-        wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-
-      Dropdown {
-        objectName: "replacementProfilePicker"
-        Layout.fillWidth: true
-        visible: root.deleteProfileTarget === root.activeProfile && root.deleteProfileTarget !== ""
-        label: "Switch to"
-        options: root.profileNames.filter(function(name) { return name !== root.deleteProfileTarget })
-        value: root.deleteProfileReplacement
-        foreground: root.foreground
-        onChanged: function(value) { root.deleteProfileReplacement = value }
-      }
-      RowLayout {
-        Layout.fillWidth: true
-        visible: root.deleteProfileTarget !== ""
-        spacing: Style.space(8)
-        Button {
-          objectName: "confirmDeleteProfileButton"
-          text: "Confirm delete"
-          focusable: root.windowMode
-          bordered: true
-          foreground: Commons.Color.urgent
-          onClicked: root.confirmProfileDelete()
-        }
-        Button {
-          objectName: "cancelDeleteProfileButton"
-          text: "Cancel"
-          focusable: root.windowMode
-          bordered: true
-          foreground: root.foreground
-          onClicked: root.cancelProfileDelete()
-        }
-      }
-
-      Text {
-        Layout.fillWidth: true
-        text: "Create a separate profile starting with “" + root.activeProfile + "” mappings and pointer settings. The original stays unchanged."
-        textFormat: Text.PlainText
-        color: Qt.darker(root.foreground, 1.5)
-        wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-    }
-
-    Text {
-      objectName: "profileMessage"
-      Layout.fillWidth: true
-      visible: root.profileEditingVisible && root.profileMessage !== ""
-      text: root.profileMessage
-      textFormat: Text.PlainText
-      color: Commons.Color.urgent
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    PanelSectionHeader { text: "POINTER AND SCROLLING"; foreground: root.foreground }
-
-    Text {
-      Layout.fillWidth: true
-      text: root.pointerDescription
-      textFormat: Text.PlainText
-      color: root.foreground
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    ColumnLayout {
-      objectName: "pointerSettingsForm"
-      Layout.fillWidth: true
-      visible: root.pointerEditingVisible
-      enabled: !root.settingsBusy
-      spacing: Style.space(8)
-
-      Toggle {
-        objectName: "pointerEnabledToggle"
-        Layout.fillWidth: true
-        label: "Enable pointer and scrolling"
-        checked: root.pointerDraft.enabled
-        foreground: root.foreground
-        onClicked: root.editPointerSetting("enabled", !root.pointerDraft.enabled)
-      }
-
-      GridLayout {
-        Layout.fillWidth: true
-        columns: root.width < Style.space(460) ? 1 : 2
-        columnSpacing: Style.space(12)
-        rowSpacing: Style.space(8)
-        enabled: root.pointerDraft.enabled
-
-        Dropdown {
-          objectName: "pointerStickPicker"
-          Layout.fillWidth: true
-          label: "Pointer stick"
-          options: [{value:"left", label:"Left"}, {value:"right", label:"Right"}, {value:"none", label:"None"}]
-          value: root.pointerDraft.pointer_stick
-          foreground: root.foreground
-          onChanged: function(value) { root.editPointerSetting("pointer_stick", value) }
-        }
-        Dropdown {
-          objectName: "scrollStickPicker"
-          Layout.fillWidth: true
-          label: "Scroll stick"
-          options: [{value:"left", label:"Left"}, {value:"right", label:"Right"}, {value:"none", label:"None"}]
-          value: root.pointerDraft.scroll_stick
-          foreground: root.foreground
-          onChanged: function(value) { root.editPointerSetting("scroll_stick", value) }
-        }
-        NumberField {
-          objectName: "pointerSpeedField"
-          Layout.fillWidth: true
-          label: "Pointer speed (px/s)"
-          value: Math.round(root.pointerDraft.speed)
-          from: 1; to: 4000; stepSize: 50
-          foreground: root.foreground
-          onModified: function(value) { root.editPointerSetting("speed", value) }
-        }
-        NumberField {
-          objectName: "scrollSpeedField"
-          Layout.fillWidth: true
-          label: "Scroll speed (steps/s)"
-          value: Math.round(root.pointerDraft.scroll_speed)
-          from: 1; to: 60
-          foreground: root.foreground
-          onModified: function(value) { root.editPointerSetting("scroll_speed", value) }
-        }
-        NumberField {
-          objectName: "pointerDeadZoneField"
-          Layout.fillWidth: true
-          label: "Pointer dead zone (%)"
-          value: Math.round(root.pointerDraft.dead_zone * 100)
-          from: 0; to: 94
-          foreground: root.foreground
-          onModified: function(value) { root.editPointerSetting("dead_zone", value / 100) }
-        }
-        NumberField {
-          objectName: "scrollDeadZoneField"
-          Layout.fillWidth: true
-          label: "Scroll dead zone (%)"
-          value: Math.round(root.pointerDraft.scroll_dead_zone * 100)
-          from: 0; to: 94
-          foreground: root.foreground
-          onModified: function(value) { root.editPointerSetting("scroll_dead_zone", value / 100) }
-        }
-      }
-
-      Toggle {
-        objectName: "invertScrollToggle"
-        Layout.fillWidth: true
-        label: "Invert scrolling"
-        checked: root.pointerDraft.invert_scroll
-        enabled: root.pointerDraft.enabled
-        foreground: root.foreground
-        onClicked: root.editPointerSetting("invert_scroll", !root.pointerDraft.invert_scroll)
-      }
-
-      Text {
-        Layout.fillWidth: true
-        text: "Saved mappings reserve their recorded tokens. Defaults use unassigned L2/R2 for clicks; A/B keep their shortcuts. Blank click fields disable that click."
-        textFormat: Text.PlainText
-        color: Qt.darker(root.foreground, 1.5)
-        wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-      Text { text: "Left click token"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-      TextField {
-        objectName: "leftClickTokenField"
-        Layout.fillWidth: true
-        enabled: root.pointerDraft.enabled
-        foreground: root.foreground
-        text: root.pointerLeftToken
-        placeholderText: "e.g. A, L2 or a configured alias"
-        onTextEdited: root.pointerLeftToken = text
-      }
-      Text { text: "Right click token"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-      TextField {
-        objectName: "rightClickTokenField"
-        Layout.fillWidth: true
-        enabled: root.pointerDraft.enabled
-        foreground: root.foreground
-        text: root.pointerRightToken
-        placeholderText: "e.g. B, R2 or a configured alias"
-        onTextEdited: root.pointerRightToken = text
-      }
-      RowLayout {
-        Layout.fillWidth: true
-        Button {
-          objectName: "applyPointerButton"
-          text: "Apply settings"
-          enabled: root.pointerDirty && !root.settingsBusy
-          focusable: root.windowMode
-          bordered: true
-          foreground: root.foreground
-          onClicked: root.applyPointerSettings()
-        }
-        Button {
-          objectName: "resetPointerButton"
-          text: "Reset edits"
-          enabled: root.pointerDirty && !root.settingsBusy
-          focusable: root.windowMode
-          bordered: true
-          foreground: root.foreground
-          onClicked: root.resetPointerDraft()
-        }
-        Text {
-          text: root.pointerDirty ? "Unsaved changes" : "Saved"
-          color: root.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
-      }
-    }
-
-    // ---- status: device, live buttons, master switch, refresh --------
 
     RowLayout {
       Layout.fillWidth: true
@@ -1253,400 +895,7 @@ FocusScope {
       }
     }
 
-    PanelSeparator {
-      Layout.fillWidth: true
-      foreground: root.foreground
-    }
-
-    // ---- existing bindings -------------------------------------------
-
-    PanelSectionHeader {
-      text: root.bindings.length + " BINDINGS"
-        + (root.offCount > 0 ? " · " + root.offCount + " OFF" : "")
-        + (root.switchedOn ? "" : " · DISABLED")
-      foreground: root.switchedOn ? root.foreground : Commons.Color.urgent
-    }
-
-    Flickable {
-      id: bindingFlick
-      Layout.fillWidth: true
-      Layout.preferredHeight: Math.min(bindingColumn.implicitHeight, Style.space(280))
-      contentWidth: width
-      contentHeight: bindingColumn.implicitHeight
-      clip: true
-      interactive: contentHeight > height
-      opacity: root.switchedOn ? 1.0 : 0.45
-      ScrollBar.vertical: ScrollBar {
-        id: bindingScroll
-        policy: ScrollBar.AsNeeded
-      }
-
-      // Keep the keyboard cursor in view.
-      Connections {
-        target: root
-        function onCursorIndexChanged() {
-          var row = bindingRepeater.itemAt(root.cursorIndex)
-          if (!row) return
-          if (row.y < bindingFlick.contentY)
-            bindingFlick.contentY = row.y
-          else if (row.y + row.height > bindingFlick.contentY + bindingFlick.height)
-            bindingFlick.contentY = row.y + row.height - bindingFlick.height
-        }
-      }
-
-      ColumnLayout {
-        id: bindingColumn
-        width: bindingFlick.width - (bindingFlick.interactive ? bindingScroll.width + Style.space(6) : 0)
-        spacing: Style.space(2)
-
-        Repeater {
-          id: bindingRepeater
-          model: root.bindings
-
-          Item {
-            id: bindingRow
-            required property var modelData
-            required property int index
-            readonly property bool isOn: modelData.enabled !== false
-            Layout.fillWidth: true
-            implicitHeight: rowLayout.implicitHeight + Style.space(6)
-
-            CursorSurface {
-              anchors.fill: parent
-              hasCursor: root.cursorIndex === bindingRow.index
-              foreground: root.foreground
-            }
-
-            // Clicking a row loads it into the form below, to change it.
-            MouseArea {
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onEntered: root.cursorIndex = bindingRow.index
-              onClicked: root.editBinding(bindingRow.modelData)
-            }
-
-            RowLayout {
-              id: rowLayout
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.leftMargin: Style.space(4)
-              spacing: Style.space(8)
-              opacity: bindingRow.isOn ? 1.0 : 0.45
-
-              Text {
-                Layout.preferredWidth: Style.space(112)
-                Layout.alignment: Qt.AlignTop
-                text: bindingRow.modelData.label || bindingRow.modelData.combo
-                color: Commons.Color.accent
-                elide: Text.ElideRight
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-
-              // Description on top, what it actually does underneath --
-              // a description alone does not tell you which shortcut it
-              // sends, which is the thing you need when editing.
-              ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
-
-                Text {
-                  Layout.fillWidth: true
-                  visible: text !== ""
-                  text: bindingRow.modelData.description || ""
-                  color: root.foreground
-                  elide: Text.ElideRight
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                }
-
-                Text {
-                  Layout.fillWidth: true
-                  text: root.actionText(bindingRow.modelData)
-                    + (bindingRow.modelData.repeat ? "  ·  repeat" : "")
-                    + (bindingRow.modelData.hold ? "  ·  hold" : "")
-                    + (bindingRow.isOn ? "" : "  ·  off")
-                  color: Qt.darker(root.foreground, 1.6)
-                  elide: Text.ElideRight
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                }
-              }
-
-              PanelActionButton {
-                Layout.alignment: Qt.AlignTop
-                iconText: "󰆴"
-                tooltipText: "Remove binding"
-                enabled: !root.bindingWritesBlocked
-                foreground: root.foreground
-                hoverColor: Commons.Color.urgent
-                onClicked: root.removeBinding(bindingRow.modelData.combo)
-              }
-            }
-          }
-        }
-      }
-    }
-
-    PanelSeparator {
-      Layout.fillWidth: true
-      foreground: root.foreground
-    }
-
-    // ---- new binding --------------------------------------------------
-
-    Button {
-      text: "Check compositor overlaps"
-      focusable: root.windowMode
-      bordered: true
-      foreground: root.foreground
-      onClicked: root.loadMappings()
-    }
-    PanelSectionHeader {
-      text: "EXISTING COMPOSITOR MAPPINGS"
-      foreground: root.foreground
-    }
-
-    Text {
-      Layout.fillWidth: true
-      text: root.mappingMessage
-      textFormat: Text.PlainText
-      color: Qt.darker(root.foreground, 1.5)
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    Repeater {
-      model: root.mappingState === "available" ? root.matchingMappings : []
-      Text {
-        required property var modelData
-        Layout.fillWidth: true
-        text: "Potential overlap · " + root.comboText([modelData.token])
-          + (modelData.recorded !== modelData.token ? " → " + root.comboText([modelData.recorded]) : "")
-          + "\n" + modelData.description
-          + " · " + root.modifierContext(modelData.modifiers) + " · submap " + (modelData.submap || "default")
-        textFormat: Text.PlainText
-        color: root.foreground
-        wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-    }
-
-    Text {
-      Layout.fillWidth: true
-      text: "Only selected or saved input tokens are shown. Native application mouse behavior is not enumerated."
-      textFormat: Text.PlainText
-      color: Qt.darker(root.foreground, 1.5)
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    PanelSectionHeader {
-      text: root.draftExisting ? "EDIT BINDING" : "NEW BINDING"
-      foreground: root.foreground
-    }
-
-    // Step 1 of the flow, spelled out: the pad is the input device for
-    // this form, and that is not obvious from a button labelled "Record".
-    Text {
-      Layout.fillWidth: true
-      text: root.captureHint
-      color: root.capturing ? Commons.Color.accent : Qt.darker(root.foreground, 1.5)
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    RowLayout {
-      Layout.fillWidth: true
-      spacing: Style.space(8)
-
-      Button {
-
-        focusable: root.windowMode
-        text: root.capturing
-          ? "Waiting…"
-          : (root.draftCombo.length > 0
-              ? root.comboText(root.draftCombo)
-              : "1. Record combo")
-        tooltipText: "Record a combo (r)"
-        enabled: root.connected && !root.settingsBusy
-        selected: root.capturing || root.draftCombo.length > 0
-        bordered: true
-        foreground: root.foreground
-        onClicked: root.beginCapture()
-      }
-
-      Button {
-
-        focusable: root.windowMode
-        text: root.draftIsCommand ? "Command" : "Keys"
-        tooltipText: root.draftIsCommand
-          ? "Runs a shell command"
-          : "Types a keyboard shortcut, e.g. SUPER+RETURN"
-        bordered: true
-        foreground: root.foreground
-        onClicked: root.draftIsCommand = !root.draftIsCommand
-      }
-
-      Item { Layout.fillWidth: true }
-
-      Button {
-
-        focusable: root.windowMode
-        text: "Repeat"
-        tooltipText: "Fire again while held, for volume and brightness"
-        selected: root.draftRepeat
-        bordered: true
-        foreground: root.foreground
-        onClicked: {
-          root.draftRepeat = !root.draftRepeat
-          if (root.draftRepeat) root.draftHold = false
-        }
-      }
-
-      Button {
-
-        focusable: root.windowMode
-        text: "Hold"
-        tooltipText: "Only fire after a long press, for anything destructive"
-        selected: root.draftHold
-        bordered: true
-        foreground: root.foreground
-        onClicked: {
-          root.draftHold = !root.draftHold
-          if (root.draftHold) root.draftRepeat = false
-        }
-      }
-    }
-
-    SearchableDropdown {
-      id: shortcutPicker
-      onPopupOpenChanged: if (popupOpen) { root.loadShortcuts(); Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) }) }
-      Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
-      popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
-      popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
-      Item { id: shortcutPickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
-      Layout.fillWidth: true
-      label: "CURRENT SHORTCUTS (OPTIONAL)"
-      options: root.shortcutOptions
-      value: ""
-      triggerLabel: "Choose an existing shortcut"
-      placeholderText: "Search descriptions or keys…"
-      emptyText: "No matching keyboard shortcuts"
-      foreground: root.foreground
-      onChanged: function(value) {
-        root.chooseShortcut(value)
-        shortcutPicker.value = ""
-      }
-    }
-
-    Text {
-      Layout.fillWidth: true
-      visible: root.shortcutMessage !== ""
-      text: root.shortcutMessage
-      textFormat: Text.PlainText
-      color: Qt.darker(root.foreground, 1.5)
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    SearchableDropdown {
-      id: keyboardPicker
-      onPopupOpenChanged: if (popupOpen) { root.loadKeyboard(); Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) }) }
-      Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
-      popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
-      popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
-      Item { id: keyboardPickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
-      Layout.fillWidth: true
-      visible: !root.draftIsCommand
-      label: "STANDARD KEY (OPTIONAL)"
-      options: root.keyboardOptions
-      value: ""
-      triggerLabel: "Choose a standard key"
-      placeholderText: "Search keyboard keys…"
-      foreground: root.foreground
-      onChanged: function(value) {
-        root.chooseKeyboardKey(value)
-        keyboardPicker.value = ""
-      }
-    }
-
-    Text {
-      Layout.fillWidth: true
-      visible: !root.draftIsCommand && root.keyboardMessage !== ""
-      text: root.keyboardMessage
-      textFormat: Text.PlainText
-      color: Qt.darker(root.foreground, 1.5)
-      wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-    }
-
-    TextField {
-      id: actionField
-      onTextChanged: root.cancelProfileDelete()
-      Layout.fillWidth: true
-      foreground: root.foreground
-      text: root.draftAction
-      placeholderText: root.draftIsCommand
-        ? "2. Command to run, e.g. omarchy capture screenshot"
-        : "2. Keys to send, e.g. SUPER+RETURN"
-      onTextEdited: root.draftAction = text
-      onActiveFocusChanged: root.fieldFocused = activeFocus || descriptionField.activeFocus
-      onAccepted: root.saveDraft()
-      Keys.onEscapePressed: keyCatcher.forceActiveFocus()
-    }
-
-    TextField {
-      id: descriptionField
-      onTextChanged: root.cancelProfileDelete()
-      Layout.fillWidth: true
-      foreground: root.foreground
-      text: root.draftDescription
-      placeholderText: "Description (optional)"
-      onTextEdited: root.draftDescription = text
-      onActiveFocusChanged: root.fieldFocused = activeFocus || actionField.activeFocus
-      onAccepted: root.saveDraft()
-      Keys.onEscapePressed: keyCatcher.forceActiveFocus()
-    }
-
-    RowLayout {
-      Layout.fillWidth: true
-      spacing: Style.space(8)
-
-      Button {
-
-        focusable: root.windowMode
-        text: root.draftExisting ? "3. Save changes" : "3. Save binding"
-        enabled: root.draftReady && !root.bindingWritesBlocked
-        bordered: true
-        foreground: root.foreground
-        onClicked: root.saveDraft()
-      }
-
-      Item { Layout.fillWidth: true }
-
-      Button {
-
-        focusable: root.windowMode
-        text: "Clear"
-        bordered: true
-        foreground: root.foreground
-        onClicked: {
-          if (root.service) root.service.cancelCapture()
-          root.clearDraft()
-        }
-      }
-    }
-
+    // A failed save or Apply, shown above the tabs so it is seen from either.
     Text {
       Layout.fillWidth: true
       visible: root.statusMessage !== ""
@@ -1655,6 +904,786 @@ FocusScope {
       wrapMode: Text.WordWrap
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      Layout.fillWidth: true
+      visible: root.configuredModesEnabled && root.configuredMode === "game"
+      text: "Game mode: bindings are off and games get the controller. Change it under Advanced."
+      textFormat: Text.PlainText
+      color: Qt.darker(root.foreground, 1.5)
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    ButtonGroup {
+      objectName: "editorTabs"
+      options: [{ value: "bindings", label: "Bindings" }, { value: "advanced", label: "Advanced" }]
+      value: root.currentTab
+      focusable: root.windowMode
+      foreground: root.foreground
+      onChanged: function (value) { root.currentTab = value }
+    }
+
+    PanelSeparator {
+      Layout.fillWidth: true
+      foreground: root.foreground
+    }
+
+    // ---- bindings tab: the list, then adding or editing one ----------
+
+    ColumnLayout {
+      objectName: "bindingsPage"
+      Layout.fillWidth: true
+      visible: root.currentTab === "bindings"
+      spacing: Style.space(10)
+
+      PanelSectionHeader {
+        text: root.bindings.length + " BINDINGS"
+          + (root.offCount > 0 ? " · " + root.offCount + " OFF" : "")
+          + (root.profileNames.length > 1 ? " · " + root.activeProfile.toUpperCase() : "")
+          + (root.switchedOn ? "" : " · DISABLED")
+        foreground: root.switchedOn ? root.foreground : Commons.Color.urgent
+      }
+
+      Flickable {
+        id: bindingFlick
+        Layout.fillWidth: true
+        Layout.preferredHeight: Math.min(bindingColumn.implicitHeight, Style.space(280))
+        contentWidth: width
+        contentHeight: bindingColumn.implicitHeight
+        clip: true
+        interactive: contentHeight > height
+        opacity: root.switchedOn ? 1.0 : 0.45
+        ScrollBar.vertical: ScrollBar {
+          id: bindingScroll
+          policy: ScrollBar.AsNeeded
+        }
+
+        // Keep the keyboard cursor in view.
+        Connections {
+          target: root
+          function onCursorIndexChanged() {
+            var row = bindingRepeater.itemAt(root.cursorIndex)
+            if (!row) return
+            if (row.y < bindingFlick.contentY)
+              bindingFlick.contentY = row.y
+            else if (row.y + row.height > bindingFlick.contentY + bindingFlick.height)
+              bindingFlick.contentY = row.y + row.height - bindingFlick.height
+          }
+        }
+
+        ColumnLayout {
+          id: bindingColumn
+          width: bindingFlick.width - (bindingFlick.interactive ? bindingScroll.width + Style.space(6) : 0)
+          spacing: Style.space(2)
+
+          Repeater {
+            id: bindingRepeater
+            model: root.bindings
+
+            Item {
+              id: bindingRow
+              required property var modelData
+              required property int index
+              readonly property bool isOn: modelData.enabled !== false
+              Layout.fillWidth: true
+              implicitHeight: rowLayout.implicitHeight + Style.space(6)
+
+              CursorSurface {
+                anchors.fill: parent
+                hasCursor: root.cursorIndex === bindingRow.index
+                foreground: root.foreground
+              }
+
+              // Clicking a row loads it into the form below, to change it.
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: root.cursorIndex = bindingRow.index
+                onClicked: root.editBinding(bindingRow.modelData)
+              }
+
+              RowLayout {
+                id: rowLayout
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: Style.space(4)
+                spacing: Style.space(8)
+                opacity: bindingRow.isOn ? 1.0 : 0.45
+
+                Text {
+                  Layout.preferredWidth: Style.space(112)
+                  Layout.alignment: Qt.AlignTop
+                  text: bindingRow.modelData.label || bindingRow.modelData.combo
+                  color: Commons.Color.accent
+                  elide: Text.ElideRight
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+
+                // Description on top, what it actually does underneath --
+                // a description alone does not tell you which shortcut it
+                // sends, which is the thing you need when editing.
+                ColumnLayout {
+                  Layout.fillWidth: true
+                  spacing: 0
+
+                  Text {
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    text: bindingRow.modelData.description || ""
+                    color: root.foreground
+                    elide: Text.ElideRight
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  Text {
+                    Layout.fillWidth: true
+                    text: root.actionText(bindingRow.modelData)
+                      + (bindingRow.modelData.repeat ? "  ·  repeat" : "")
+                      + (bindingRow.modelData.hold ? "  ·  hold" : "")
+                      + (bindingRow.isOn ? "" : "  ·  off")
+                    color: Qt.darker(root.foreground, 1.6)
+                    elide: Text.ElideRight
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+
+                PanelActionButton {
+                  Layout.alignment: Qt.AlignTop
+                  iconText: "󰆴"
+                  tooltipText: "Remove binding"
+                  enabled: !root.bindingWritesBlocked
+                  foreground: root.foreground
+                  hoverColor: Commons.Color.urgent
+                  onClicked: root.removeBinding(bindingRow.modelData.combo)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      PanelSeparator {
+        Layout.fillWidth: true
+        foreground: root.foreground
+      }
+
+      PanelSectionHeader {
+        text: root.draftExisting ? "EDIT BINDING" : "ADD BINDING"
+        foreground: root.foreground
+      }
+
+      // The pad is the input device for this form, which is not obvious
+      // from a button labelled "Record", so the next step is spelled out.
+      Text {
+        Layout.fillWidth: true
+        text: root.captureHint
+        color: root.capturing ? Commons.Color.accent : Qt.darker(root.foreground, 1.5)
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(8)
+
+        Button {
+          focusable: root.windowMode
+          text: root.capturing
+            ? "Waiting…"
+            : (root.draftCombo.length > 0 ? root.comboText(root.draftCombo) : "Record combo")
+          tooltipText: "Record a combo (r)"
+          enabled: root.connected && !root.settingsBusy
+          selected: root.capturing || root.draftCombo.length > 0
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.beginCapture()
+        }
+
+        Button {
+          focusable: root.windowMode
+          text: root.draftIsCommand ? "Command" : "Keys"
+          tooltipText: root.draftIsCommand
+            ? "Runs a shell command"
+            : "Types a keyboard shortcut, e.g. SUPER+RETURN"
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.draftIsCommand = !root.draftIsCommand
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Button {
+          focusable: root.windowMode
+          text: "Repeat"
+          tooltipText: "Fire again while held, for volume and brightness"
+          selected: root.draftRepeat
+          bordered: true
+          foreground: root.foreground
+          onClicked: {
+            root.draftRepeat = !root.draftRepeat
+            if (root.draftRepeat) root.draftHold = false
+          }
+        }
+
+        Button {
+          focusable: root.windowMode
+          text: "Hold"
+          tooltipText: "Only fire after a long press, for anything destructive"
+          selected: root.draftHold
+          bordered: true
+          foreground: root.foreground
+          onClicked: {
+            root.draftHold = !root.draftHold
+            if (root.draftHold) root.draftRepeat = false
+          }
+        }
+      }
+
+      // Both catalogs load the first time the picker opens, never before.
+      SearchableDropdown {
+        id: actionPicker
+        objectName: "actionPicker"
+        onPopupOpenChanged: if (popupOpen) {
+          root.loadShortcuts()
+          root.loadKeyboard()
+          Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) })
+        }
+        Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
+        popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
+        popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
+        Item { id: actionPickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
+        Layout.fillWidth: true
+        visible: !root.draftIsCommand
+        showLabel: false
+        label: "PICK A SHORTCUT OR KEY"
+        options: root.pickerOptions
+        value: ""
+        triggerLabel: "Pick one of your shortcuts or a key…"
+        placeholderText: "Search shortcuts and keys…"
+        emptyText: "Nothing matches"
+        foreground: root.foreground
+        onChanged: function(value) {
+          root.choosePicked(value)
+          actionPicker.value = ""
+        }
+      }
+
+      Text {
+        Layout.fillWidth: true
+        visible: !root.draftIsCommand && root.pickerMessage !== ""
+        text: root.pickerMessage
+        textFormat: Text.PlainText
+        color: Qt.darker(root.foreground, 1.5)
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      TextField {
+        id: actionField
+        onTextChanged: root.cancelProfileDelete()
+        Layout.fillWidth: true
+        foreground: root.foreground
+        text: root.draftAction
+        placeholderText: root.draftIsCommand
+          ? "Command to run, e.g. omarchy capture screenshot"
+          : "Keys to send, e.g. SUPER+RETURN"
+        onTextEdited: root.draftAction = text
+        onActiveFocusChanged: root.fieldFocused = activeFocus || descriptionField.activeFocus
+        onAccepted: root.saveDraft()
+        Keys.onEscapePressed: keyCatcher.forceActiveFocus()
+      }
+
+      TextField {
+        id: descriptionField
+        onTextChanged: root.cancelProfileDelete()
+        Layout.fillWidth: true
+        foreground: root.foreground
+        text: root.draftDescription
+        placeholderText: "Description (optional)"
+        onTextEdited: root.draftDescription = text
+        onActiveFocusChanged: root.fieldFocused = activeFocus || actionField.activeFocus
+        onAccepted: root.saveDraft()
+        Keys.onEscapePressed: keyCatcher.forceActiveFocus()
+      }
+
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(8)
+
+        Button {
+          focusable: root.windowMode
+          text: root.draftExisting ? "Save changes" : "Save binding"
+          enabled: root.draftReady && !root.bindingWritesBlocked
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.saveDraft()
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Button {
+          focusable: root.windowMode
+          text: "Clear"
+          bordered: true
+          foreground: root.foreground
+          onClicked: {
+            if (root.service) root.service.cancelCapture()
+            root.clearDraft()
+          }
+        }
+      }
+    }
+
+    // ---- advanced tab: mode, profiles, pointer, overlaps ---------------
+
+    ColumnLayout {
+      objectName: "advancedPage"
+      Layout.fillWidth: true
+      visible: root.currentTab === "advanced"
+      spacing: Style.space(10)
+
+      PanelSectionHeader { text: "CONTROLLER MODE"; foreground: root.foreground }
+
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(8)
+        Button {
+          objectName: "modeOffButton"
+          text: "Off"
+          tooltipText: "No mode switching: bindings work and the controller stays shared"
+          selected: !root.configuredModesEnabled
+          enabled: !modeProc.running
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: if (root.configuredModesEnabled) root.setInputMode("disable")
+        }
+        Button {
+          objectName: "gameModeButton"
+          text: "Game"
+          tooltipText: "Leave the controller to games; bindings are off"
+          selected: root.configuredModesEnabled && root.configuredMode === "game"
+          enabled: !modeProc.running
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.setInputMode("game")
+        }
+        Button {
+          objectName: "osModeButton"
+          text: "OS"
+          tooltipText: "Take the controller over to drive the desktop"
+          selected: root.configuredModesEnabled && root.configuredMode === "os"
+          enabled: !modeProc.running
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.setInputMode("os")
+        }
+      }
+
+      Text {
+        Layout.fillWidth: true
+        text: root.modeDescription
+        textFormat: Text.PlainText
+        color: Qt.darker(root.foreground, 1.5)
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      PanelSectionHeader { text: "PROFILES"; foreground: root.foreground }
+
+      Text {
+        objectName: "gameProfileSummary"
+        Layout.fillWidth: true
+        visible: !root.profileEditingVisible
+        text: root.profilesLoaded ? "Passthrough · OS profile: " + root.activeProfile : "Loading OS profile…"
+        textFormat: Text.PlainText
+        color: root.foreground
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      ColumnLayout {
+        objectName: "profileSettingsForm"
+        Layout.fillWidth: true
+        visible: root.profileEditingVisible
+        enabled: !root.settingsBusy && root.profilesLoaded
+        spacing: Style.space(8)
+
+        SearchableDropdown {
+          id: profilePicker
+          onPopupOpenChanged: if (popupOpen) Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) })
+          Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
+          popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
+          popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
+          Item { id: profilePickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
+          objectName: "osProfilePicker"
+          Layout.fillWidth: true
+          showLabel: false
+          value: ""
+          options: root.profileNames
+          triggerLabel: "Profile: " + root.activeProfile
+          placeholderText: "Search profiles…"
+          foreground: root.foreground
+          onChanged: function(value) {
+            root.changeProfile("use", value)
+            profilePicker.value = ""
+          }
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(8)
+
+          TextField {
+            id: profileNameField
+            onTextChanged: {
+              root.cancelProfileDelete()
+              if (text.trim()) root.profileNameMissing = false
+            }
+            objectName: "profileNameField"
+            Layout.fillWidth: true
+            maximumLength: 64
+            placeholderText: "New profile name"
+            foreground: root.foreground
+            onAccepted: root.changeProfile("create", text)
+          }
+          Button {
+            objectName: "copyProfileButton"
+            text: "Create profile"
+            tooltipText: "A new profile starting from this one's bindings and pointer settings"
+            focusable: root.windowMode
+            bordered: true
+            foreground: root.foreground
+            onClicked: root.changeProfile("create", profileNameField.text)
+          }
+          Button {
+            objectName: "renameProfileButton"
+            text: "Rename current"
+            enabled: profileNameField.text.trim() !== "" && profileNameField.text.trim() !== root.activeProfile
+            focusable: root.windowMode
+            bordered: true
+            foreground: root.foreground
+            onClicked: root.changeProfile("rename", profileNameField.text)
+          }
+        }
+
+        Text {
+          objectName: "profileNameError"
+          Layout.fillWidth: true
+          visible: root.profileNameMissing
+          text: "Enter a name for the new profile."
+          color: Commons.Color.urgent
+          wrapMode: Text.WordWrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(8)
+          visible: root.profileNames.length > 1
+
+          Dropdown {
+            objectName: "deleteProfilePicker"
+            Layout.fillWidth: true
+            label: "Profile to delete"
+            options: root.profileNames
+            value: root.profileDeleteSelection || root.activeProfile
+            foreground: root.foreground
+            onChanged: function(value) { root.cancelProfileDelete(); root.profileDeleteSelection = value }
+          }
+          Button {
+            objectName: "deleteProfileButton"
+            Layout.alignment: Qt.AlignBottom
+            text: "Delete profile"
+            enabled: root.profileNames.length > 1 && !root.deleteProfileTarget
+            focusable: root.windowMode
+            bordered: true
+            foreground: root.foreground
+            onClicked: root.requestProfileDelete()
+          }
+        }
+
+        Text {
+          Layout.fillWidth: true
+          visible: root.deleteProfileTarget !== ""
+          text: "Delete “" + root.deleteProfileTarget + "” and its saved mappings and pointer settings?"
+            + (root.deleteProfileTarget === root.activeProfile ? " Switch to “" + root.deleteProfileReplacement + "”." : "")
+          textFormat: Text.PlainText
+          color: root.foreground
+          wrapMode: Text.WordWrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Dropdown {
+          objectName: "replacementProfilePicker"
+          Layout.fillWidth: true
+          visible: root.deleteProfileTarget === root.activeProfile && root.deleteProfileTarget !== ""
+          label: "Switch to"
+          options: root.profileNames.filter(function(name) { return name !== root.deleteProfileTarget })
+          value: root.deleteProfileReplacement
+          foreground: root.foreground
+          onChanged: function(value) { root.deleteProfileReplacement = value }
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          visible: root.deleteProfileTarget !== ""
+          spacing: Style.space(8)
+          Button {
+            objectName: "confirmDeleteProfileButton"
+            text: "Confirm delete"
+            focusable: root.windowMode
+            bordered: true
+            foreground: Commons.Color.urgent
+            onClicked: root.confirmProfileDelete()
+          }
+          Button {
+            objectName: "cancelDeleteProfileButton"
+            text: "Cancel"
+            focusable: root.windowMode
+            bordered: true
+            foreground: root.foreground
+            onClicked: root.cancelProfileDelete()
+          }
+        }
+      }
+
+      Text {
+        objectName: "profileMessage"
+        Layout.fillWidth: true
+        visible: root.profileEditingVisible && root.profileMessage !== ""
+        text: root.profileMessage
+        textFormat: Text.PlainText
+        color: Commons.Color.urgent
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      PanelSectionHeader { text: "POINTER AND SCROLLING"; foreground: root.foreground }
+
+      Text {
+        Layout.fillWidth: true
+        text: root.pointerDescription
+        textFormat: Text.PlainText
+        color: Qt.darker(root.foreground, 1.5)
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      ColumnLayout {
+        objectName: "pointerSettingsForm"
+        Layout.fillWidth: true
+        visible: root.pointerEditingVisible
+        enabled: !root.settingsBusy
+        spacing: Style.space(8)
+
+        Toggle {
+          objectName: "pointerEnabledToggle"
+          Layout.fillWidth: true
+          label: "Use a stick as the mouse (OS mode)"
+          checked: root.pointerDraft.enabled
+          foreground: root.foreground
+          onClicked: root.editPointerSetting("enabled", !root.pointerDraft.enabled)
+        }
+
+        // The details only matter once the pointer is on.
+        GridLayout {
+          Layout.fillWidth: true
+          visible: root.pointerDraft.enabled
+          columns: root.width < Style.space(460) ? 1 : 2
+          columnSpacing: Style.space(12)
+          rowSpacing: Style.space(8)
+
+          Dropdown {
+            objectName: "pointerStickPicker"
+            Layout.fillWidth: true
+            label: "Pointer stick"
+            options: [{value:"left", label:"Left"}, {value:"right", label:"Right"}, {value:"none", label:"None"}]
+            value: root.pointerDraft.pointer_stick
+            foreground: root.foreground
+            onChanged: function(value) { root.editPointerSetting("pointer_stick", value) }
+          }
+          Dropdown {
+            objectName: "scrollStickPicker"
+            Layout.fillWidth: true
+            label: "Scroll stick"
+            options: [{value:"left", label:"Left"}, {value:"right", label:"Right"}, {value:"none", label:"None"}]
+            value: root.pointerDraft.scroll_stick
+            foreground: root.foreground
+            onChanged: function(value) { root.editPointerSetting("scroll_stick", value) }
+          }
+          NumberField {
+            objectName: "pointerSpeedField"
+            Layout.fillWidth: true
+            label: "Pointer speed (px/s)"
+            value: Math.round(root.pointerDraft.speed)
+            from: 1; to: 4000; stepSize: 50
+            foreground: root.foreground
+            onModified: function(value) { root.editPointerSetting("speed", value) }
+          }
+          NumberField {
+            objectName: "scrollSpeedField"
+            Layout.fillWidth: true
+            label: "Scroll speed (steps/s)"
+            value: Math.round(root.pointerDraft.scroll_speed)
+            from: 1; to: 60
+            foreground: root.foreground
+            onModified: function(value) { root.editPointerSetting("scroll_speed", value) }
+          }
+          NumberField {
+            objectName: "pointerDeadZoneField"
+            Layout.fillWidth: true
+            label: "Pointer dead zone (%)"
+            value: Math.round(root.pointerDraft.dead_zone * 100)
+            from: 0; to: 94
+            foreground: root.foreground
+            onModified: function(value) { root.editPointerSetting("dead_zone", value / 100) }
+          }
+          NumberField {
+            objectName: "scrollDeadZoneField"
+            Layout.fillWidth: true
+            label: "Scroll dead zone (%)"
+            value: Math.round(root.pointerDraft.scroll_dead_zone * 100)
+            from: 0; to: 94
+            foreground: root.foreground
+            onModified: function(value) { root.editPointerSetting("scroll_dead_zone", value / 100) }
+          }
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Style.spacing.labelGap
+            Text { text: "Left click button"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+            TextField {
+              objectName: "leftClickTokenField"
+              Layout.fillWidth: true
+              foreground: root.foreground
+              text: root.pointerLeftToken
+              placeholderText: "e.g. L2; blank for none"
+              onTextEdited: root.pointerLeftToken = text
+            }
+          }
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Style.spacing.labelGap
+            Text { text: "Right click button"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+            TextField {
+              objectName: "rightClickTokenField"
+              Layout.fillWidth: true
+              foreground: root.foreground
+              text: root.pointerRightToken
+              placeholderText: "e.g. R2; blank for none"
+              onTextEdited: root.pointerRightToken = text
+            }
+          }
+        }
+
+        Toggle {
+          objectName: "invertScrollToggle"
+          Layout.fillWidth: true
+          visible: root.pointerDraft.enabled
+          label: "Invert scrolling"
+          checked: root.pointerDraft.invert_scroll
+          foreground: root.foreground
+          onClicked: root.editPointerSetting("invert_scroll", !root.pointerDraft.invert_scroll)
+        }
+
+        Text {
+          Layout.fillWidth: true
+          visible: root.pointerDraft.enabled
+          text: "A button that has a binding keeps it, and won't also click."
+          textFormat: Text.PlainText
+          color: Qt.darker(root.foreground, 1.5)
+          wrapMode: Text.WordWrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(8)
+          Button {
+            objectName: "applyPointerButton"
+            text: "Apply"
+            enabled: root.pointerDirty && !root.settingsBusy
+            focusable: root.windowMode
+            bordered: true
+            foreground: root.foreground
+            onClicked: root.applyPointerSettings()
+          }
+          Button {
+            objectName: "resetPointerButton"
+            text: "Reset"
+            enabled: root.pointerDirty && !root.settingsBusy
+            focusable: root.windowMode
+            bordered: true
+            foreground: root.foreground
+            onClicked: root.resetPointerDraft()
+          }
+          Text {
+            text: root.pointerDirty ? "Unsaved changes" : "Saved"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+        }
+      }
+
+      PanelSectionHeader { text: "HYPRLAND OVERLAPS"; foreground: root.foreground }
+
+      Button {
+        text: "Check Hyprland shortcuts"
+        tooltipText: "List Hyprland shortcuts that use the same buttons as your bindings"
+        focusable: root.windowMode
+        bordered: true
+        foreground: root.foreground
+        onClicked: root.loadMappings()
+      }
+
+      Text {
+        Layout.fillWidth: true
+        visible: text !== ""
+        text: root.mappingMessage
+        textFormat: Text.PlainText
+        color: Qt.darker(root.foreground, 1.5)
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Repeater {
+        model: root.mappingState === "available" ? root.matchingMappings : []
+        Text {
+          required property var modelData
+          Layout.fillWidth: true
+          text: "Potential overlap · " + root.comboText([modelData.token])
+            + (modelData.recorded !== modelData.token ? " → " + root.comboText([modelData.recorded]) : "")
+            + "\n" + modelData.description
+            + " · " + root.modifierContext(modelData.modifiers) + " · submap " + (modelData.submap || "default")
+          textFormat: Text.PlainText
+          color: root.foreground
+          wrapMode: Text.WordWrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
     }
   }
 }

@@ -151,7 +151,7 @@ ShellRoot {
           // The editor is reparented into the hidden popup initially.
           editor = panel.form
           check(editor !== null, "Shared content exists")
-          action = find(editor, function(item) { return item.placeholderText !== undefined && item.placeholderText.indexOf("2. ") === 0 })
+          action = find(editor, function(item) { return item.placeholderText !== undefined && /^(Keys to send|Command to run)/.test(item.placeholderText) })
           description = find(editor, function(item) { return item.placeholderText === "Description (optional)" })
           check(action && description, "Manual key/command and description inputs retained")
           Commons.Color.shellValues = {"popups.text": "#64efab"}
@@ -179,9 +179,11 @@ ShellRoot {
           check(editor.bindings.length === 1, "Daemon binding snapshot is used")
           check(editor.shortcutOptions.length >= 2, "Fake live shortcuts loaded: " + editor.shortcutOptions.length + " / " + editor.shortcutMessage)
           editor.draftIsCommand = true
-          var shortcutPicker = find(editor, function(item) { return item.label === "CURRENT SHORTCUTS (OPTIONAL)" })
+          var shortcutPicker = find(editor, function(item) { return item.label === "PICK A SHORTCUT OR KEY" })
           check(shortcutPicker !== null, "Shared searchable picker exists")
-          shortcutPicker.changed("SUPER+RETURN")
+          check(editor.pickerOptions.length === editor.shortcutOptions.length + editor.keyboardOptions.length
+                && editor.pickerOptions[0].value.indexOf("shortcut:") === 0, "One picker lists shortcuts first, then keys")
+          shortcutPicker.changed("shortcut:SUPER+RETURN")
           check(!editor.draftIsCommand && action.text === "SUPER+RETURN" && description.text === "Terminal", "Picker fills editable keys and empty description")
           editor.chooseShortcut("PRINT")
           check(editor.draftDescription === "Screenshot", "A second choice replaces its unchanged automatic description")
@@ -191,12 +193,11 @@ ShellRoot {
           editor.chooseShortcut("SUPER+RETURN")
           check(description.text === "My description", "Picker preserves a custom description")
           check(editor.keyboardOptions.length === 119, "Fake standard keys loaded")
-          var keyboardPicker = find(editor, function(item) { return item.label === "STANDARD KEY (OPTIONAL)" })
-          check(keyboardPicker !== null, "Shared searchable key picker exists")
+          var keyboardPicker = shortcutPicker
           editor.draftIsCommand = true
-          check(!keyboardPicker.visible, "Standard key picker is hidden in Command mode")
+          check(!keyboardPicker.visible, "The picker is hidden in Command mode")
           editor.draftIsCommand = false
-          keyboardPicker.changed("ENTER")
+          keyboardPicker.changed("key:ENTER")
           check(action.text === "ENTER" && description.text === "My description", "Standard key fills editable input and preserves custom description")
           editor.draftDescription = ""
           editor.chooseKeyboardKey("LEFTSHIFT")
@@ -220,10 +221,10 @@ ShellRoot {
           editor.draftDescription = "custom keys"
           editor.saveDraft()
           editor.Window.window.height = 360
-          var picker = find(editor, function(item) { return item.label === "CURRENT SHORTCUTS (OPTIONAL)" })
+          var picker = find(editor, function(item) { return item.label === "PICK A SHORTCUT OR KEY" })
           picker.open()
         } else if (stage === 2) {
-          var picker = find(editor, function(item) { return item.label === "CURRENT SHORTCUTS (OPTIONAL)" })
+          var picker = find(editor, function(item) { return item.label === "PICK A SHORTCUT OR KEY" })
           check(picker.popupOpen && picker.filtered.length >= 2, "Real dropdown opens with captured compositor catalog")
           var list = find(editor.Window.window.contentItem, function(item) { return item.currentIndex !== undefined && item.count !== undefined && item.clip === true })
           check(list !== null && list.height > 0, "Dropdown has a clipped result viewport")
@@ -314,7 +315,7 @@ ShellRoot {
           keys.keyClick(Qt.Key_Tab)
         } else if (stage === 8) {
           var scroll = editor.parent.parent
-          var save = find(editor, function(item) { return item.text === "3. Save binding" })
+          var save = find(editor, function(item) { return item.text === "Save binding" })
           check(save.activeFocus, "Tab reaches Save")
           var point = save.mapToItem(scroll, 0, 0)
           check(point.y >= 0 && point.y + save.height <= scroll.height, "Focused Save is fully visible")
@@ -358,7 +359,7 @@ ShellRoot {
           panel.openWindow()
           editor.clearDraft()
         } else if (stage === 12) {
-          var record = find(editor, function(item) { return item.text === "1. Record combo" })
+          var record = find(editor, function(item) { return item.text === "Record combo" })
           check(record !== null && record.focusable, "Window buttons are focusable")
           record.forceActiveFocus()
           record.clicked()
@@ -422,8 +423,18 @@ ShellRoot {
           fake.running = false
           panel.openWindow()
           check(panel.windowOpened, "Editor can reopen after a native window close")
+          check(control("bindingsPage").visible && !control("advancedPage").visible, "The Bindings tab shows by default")
+          editor.currentTab = "advanced"
+          editor.editBinding({combo: "A", keys: "RETURN"})
+          check(editor.currentTab === "bindings", "Editing a binding returns to the Bindings tab")
+          editor.clearDraft()
           editor.setInputMode("game")
         } else if (stage === 18) {
+          // The reopened window is active by now, so keys reach it.
+          editor.focusNavigation()
+          keys.keyClick(Qt.Key_Right)
+          check(editor.currentTab === "advanced" && control("advancedPage").visible && !control("bindingsPage").visible, "Right arrow opens the Advanced tab")
+          // The rest of the fixture exercises mode, pointer and profile controls.
           fake._handle(JSON.stringify({event:"bindings", modes:{enabled:true,active:"game"}, bindings:fake.bindings}))
           check(editor.configuredModesEnabled && editor.configuredMode === "game", "Game mode is explicit opt-in")
           var game = find(editor, function(item) { return item.objectName === "gameModeButton" })
