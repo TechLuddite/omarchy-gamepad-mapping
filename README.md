@@ -478,15 +478,17 @@ The editor's **OS profile** selector chooses an existing profile. Enter a name
 and choose **Create profile** to keep a separate copy and select it, or **Rename
 current** to change its name. Finish or Clear a binding draft first, and Apply
 or Reset unsaved pointer settings. Game Mode shows a read-only passthrough
-summary with the remembered OS profile. Profile deletion is available through
-the CLI after selecting a different profile.
+summary with the remembered OS profile. **Delete profile** offers a target
+selector and separate **Confirm delete** / **Cancel** controls. For the active
+target, choose its replacement. Inactive deletion keeps the current profile.
 
 ```bash
 controller-control profile list --json
 controller-control profile create Travel  # clone current mappings and select Travel
 controller-control profile use Current
 controller-control profile rename Travel Couch
-controller-control profile delete Couch  # select a different profile first
+controller-control profile delete Couch  # remove an inactive profile
+controller-control profile delete Current --switch-to Travel  # active replacement
 ```
 
 Existing configs remain in their original single-profile structure until a
@@ -494,7 +496,8 @@ successful explicit profile operation. Listing profiles shows an implicit
 `Current` without writing or migrating anything. Creating the first new profile
 keeps the original mappings in `Current` and selects a separate clone. Names
 are trimmed, case sensitive, limited to 64 characters and cannot contain control
-characters. The active or last remaining profile cannot be deleted.
+characters. Deleting the active profile requires an explicit replacement; the
+last remaining profile cannot be deleted.
 
 Profile operations save one config atomically, then notify the daemon to reload.
 Adding or removing a binding edits the active profile. Its `bindings` and
@@ -503,6 +506,7 @@ Adding or removing a binding edits the active profile. Its `bindings` and
 ```json
 "profiles": {
   "active": "Travel",
+  "mirror_of": "Travel",
   "items": {
     "Current": {"bindings": [], "pointer": {}},
     "Travel": {"bindings": [], "pointer": {}}
