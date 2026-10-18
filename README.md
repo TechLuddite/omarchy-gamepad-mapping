@@ -275,6 +275,16 @@ handles it exactly like a real shortcut) or `exec` (a shell command). Options:
 - `hold` — only fire after a long press, for anything destructive.
 - `enabled: false` — keep a binding around without it firing.
 
+Key names are case-insensitive. Alongside Linux `KEY_*` names, the parser
+accepts common Hyprland/XKB spellings such as `bracketleft`, `bracketright`,
+`XF86AudioPause`, `XF86Calculator`, `XF86Eject`, `XF86KbdBrightnessDown`,
+`XF86KbdBrightnessUp`, `XF86KbdLightOnOff`, `XF86PowerOff`, `XF86TouchpadOff`,
+`XF86TouchpadOn` and `XF86TouchpadToggle`.
+
+These aliases send Linux key codes, not characters. `bracketleft` and
+`bracketright` select the physical `LEFTBRACE` and `RIGHTBRACE` keys; the active
+keyboard layout determines the resulting symbols and compositor bindings.
+
 **`enabled`** is the master switch. Turning it off keeps every binding and
 keeps the pad connected — nothing fires until it goes back on. It is what the
 panel toggle and `controller-control disable` write.
