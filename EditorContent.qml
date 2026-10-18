@@ -19,7 +19,7 @@ FocusScope {
   signal focusRequested(var item)
   readonly property Item navigationItem: keyCatcher
   readonly property Item cursorRow: bindingRepeater.itemAt(cursorIndex)
-  readonly property Item focusScrollTarget: focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
+  readonly property Item focusScrollTarget: shortcutPicker.popupOpen ? shortcutPickerExtent : focusedControl === root || focusedControl === keyCatcher ? cursorRow : focusedControl
   readonly property Item focusedControl: Window.window ? Window.window.activeFocusItem : null
   onFocusedControlChanged: {
     for (var item = focusedControl; item && item !== root; item = item.parent) {
@@ -29,6 +29,7 @@ FocusScope {
       }
     }
   }
+  readonly property real pickerPopupHeight: Math.min(Style.space(320), Math.max(Style.space(70), (Window.window ? Window.window.height : 680) - Style.space(100)))
   implicitHeight: form.implicitHeight
   height: implicitHeight
   focus: true
@@ -660,7 +661,11 @@ FocusScope {
 
     SearchableDropdown {
       id: shortcutPicker
-      onPopupOpenChanged: if (popupOpen) root.loadShortcuts()
+      onPopupOpenChanged: if (popupOpen) { root.loadShortcuts(); Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) }) }
+      Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
+      popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
+      popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
+      Item { id: shortcutPickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
       Layout.fillWidth: true
       label: "CURRENT SHORTCUTS (OPTIONAL)"
       options: root.shortcutOptions

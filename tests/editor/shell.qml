@@ -139,7 +139,17 @@ ShellRoot {
           check(description.activeFocus, "Tab reaches description")
           editor.draftDescription = "custom keys"
           editor.saveDraft()
+          editor.Window.window.height = 360
+          var picker = find(editor, function(item) { return item.label === "CURRENT SHORTCUTS (OPTIONAL)" })
+          picker.open()
         } else if (stage === 2) {
+          var picker = find(editor, function(item) { return item.label === "CURRENT SHORTCUTS (OPTIONAL)" })
+          check(picker.popupOpen && picker.filtered.length >= 2, "Real dropdown opens with captured compositor catalog")
+          var list = find(editor.Window.window.contentItem, function(item) { return item.currentIndex !== undefined && item.count !== undefined && item.clip === true })
+          check(list !== null && list.height > 0, "Dropdown has a clipped result viewport")
+          var point = list.mapToItem(editor.Window.window.contentItem,0,0)
+          check(point.y >= -1 && point.y + list.height <= editor.Window.window.height + 1, "Dropdown results fit inside a short window: " + point.y + " / " + list.height)
+          picker.close()
           check(fake.reloads === 0 && editor.draftCombo.length === 0, "Saving clears draft without duplicate reload")
           editor.draftCombo = ["X"]
           editor.draftIsCommand = true

@@ -140,11 +140,12 @@ leaves the editor usable.
 
 The optional **Current shortcuts** picker searches descriptions and key chords
 from the active Hyprland session. Selecting a row fills the editable Keys field;
-an empty description is filled too. You can still type any supported custom key
+an empty or unchanged picker/loaded description is filled too; manual edits are retained. You can still type any supported custom key
 chord or switch to Command. Selection never runs the action, and saving still
 requires a recorded controller combo and **Save binding**.
 
-The catalog refreshes when opening the editor or reloading bindings. It reads
+The shortcut catalog loads when its dropdown first opens and is then cached.
+The explicit Reload button invalidates that cache and refreshes overlap context when available; opening the editor does not spawn catalog processes. It reads
 `hyprctl -j binds` directly, without relying on an Omarchy menu cache or copying
 commands. With no current session, a single available session is selected; with
 multiple sessions, set `HYPRLAND_INSTANCE_SIGNATURE` before launching the shell.
@@ -155,7 +156,8 @@ select, Escape to close.
 
 Only parser-supported, global keyboard shortcuts with ordinary modifier masks
 are listed. Mouse, raw keycode, submap, device-specific and special
-release/locked/long-press bindings are omitted. A virtual keyboard replays Linux
+release/long-press bindings and the press side of a paired press/release action
+(such as push-to-talk) are omitted. Locked media/volume/brightness bindings are included. A virtual keyboard replays Linux
 key positions; keysym names and aliases such as `PLUS` can resolve differently
 on other layouts or require Shift. Check the resulting shortcut
 on your keyboard layout before relying on it. Several actions attached to the
@@ -467,7 +469,7 @@ it does not isolate the synthetic controller's input.
 python3 -m unittest discover -s tests -v
 ```
 
-95 tests, no dependencies. The end-to-end suite drives the real daemon with
+The end-to-end suite drives the real daemon with
 synthetic gamepads to cover chords, hotplug, disconnect, repeat, hold, two
 pads at once, hand edits to the config, and recovery from events the kernel
 dropped. Dedicated Back coverage includes legacy binding save/reload,
@@ -476,6 +478,10 @@ device. These fixtures need write access to `/dev/uinput` and read access to
 generated `/dev/input/event*` nodes (for example, membership in `input`). The
 dedicated Back fixture can be classified as a mouse; access granted
 only to joystick devices is insufficient.
+
+Searchable picker popups reserve scroll space in the editor and size their
+result viewport to the window, including short windows. The installed shared
+UI control supplies search, result clipping and keyboard behavior.
 
 ## License
 
