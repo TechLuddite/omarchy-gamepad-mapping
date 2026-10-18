@@ -43,6 +43,9 @@ with (Path(os.environ['HOME']) / 'calls.jsonl').open('a') as stream:
 if sys.argv[1:] == ['shortcuts']:
     print(CATALOG_RESPONSE)
     raise SystemExit(0)
+if sys.argv[1:] == ['keyboard-keys']:
+    print(json.dumps([{'value': 'ENTER', 'keys': 'ENTER', 'label': 'Enter / Return', 'description': 'Enter / Return'}]))
+    raise SystemExit(0)
 if sys.argv[1] not in ('bind', 'unbind'):
     raise SystemExit('Unexpected CLI command')
 if sys.argv[1:3] == ['bind', 'Z']:
@@ -76,7 +79,8 @@ if sys.argv[1:3] == ['bind', 'Z']:
     assert ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'] in calls, calls
     assert ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'] in calls, calls
     assert ["shortcuts"] in calls, calls
-    calls = [call for call in calls if call != ["shortcuts"]]
+    assert ["keyboard-keys"] in calls, calls
+    calls = [call for call in calls if call not in (["shortcuts"], ["keyboard-keys"])]
     assert calls == [
         ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'],
         ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'],

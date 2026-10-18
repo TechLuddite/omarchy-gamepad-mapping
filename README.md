@@ -163,6 +163,13 @@ on other layouts or require Shift. Check the resulting shortcut
 on your keyboard layout before relying on it. Several actions attached to the
 same chord are represented together and will retain the compositor's behavior.
 
+The optional **Standard key** picker provides 119 parser-validated keys,
+including letters, digits, navigation, punctuation, F1–F24, modifiers and keypad
+keys. Search by a friendly name or the canonical token. Selection fills the
+editable Keys field with one key; add modifiers there to build a custom chord.
+The description stays editable, and Command entry remains available. This
+catalog works without Hyprland and uses the same shared searchable UI control.
+
 Everything is also available from the CLI:
 
 ```bash
@@ -171,6 +178,8 @@ controller-control devices         # what the kernel sees
 controller-control monitor         # print button tokens as you press them
 controller-control learn           # record one combo and print its token
 controller-control list            # show configured bindings
+controller-control shortcuts       # replayable live shortcuts as JSON
+controller-control keyboard-keys   # standard keyboard keys as JSON
 controller-control bind "L + R" --keys SUPER+RETURN --description Terminal
 controller-control bind START --exec 'omarchy menu'
 controller-control unbind "L + R"

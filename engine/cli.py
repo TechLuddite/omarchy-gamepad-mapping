@@ -19,6 +19,7 @@ from .config import CONFIG_PATH, PID_PATH, Binding, Config, ConfigError, editing
 from .daemon import Daemon
 from .devices import DeviceGone, Gamepad, find_pads, scan
 from .keys import KeyParseError, parse_keys
+from .keyboard_catalog import keyboard_catalog
 
 # -- output helpers ----------------------------------------------------------
 
@@ -524,6 +525,11 @@ def cmd_shortcuts(args) -> int:
         return fail(str(exc))
 
 
+def cmd_keyboard_keys(args) -> int:
+    print(json.dumps(keyboard_catalog()))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="controller-control",
@@ -535,6 +541,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("shortcuts", help="list replayable live Hyprland shortcuts as JSON")
     p.set_defaults(func=cmd_shortcuts)
+
+    p = sub.add_parser("keyboard-keys", help="list standard keyboard keys as JSON")
+    p.set_defaults(func=cmd_keyboard_keys)
 
     p = sub.add_parser("devices", help="list input devices")
     p.add_argument("--all", action="store_true", help="include non-input devices")

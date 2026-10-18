@@ -67,6 +67,8 @@ FocusScope {
   property string shortcutOutput: ""
   property string shortcutError: ""
   property string autoDescription: ""
+  property var keyboardOptions: []
+  property string keyboardMessage: ""
 
   // Keyboard cursor over the binding list; -1 until an arrow is pressed.
   property int cursorIndex: -1
@@ -113,6 +115,17 @@ FocusScope {
         selectAction(option.keys, option.actionDescription || option.label, false)
         return
       }
+    }
+  }
+
+  function chooseKeyboardKey(value) {
+    for (var i = 0; i < keyboardOptions.length; i++) {
+      var option = keyboardOptions[i]
+      if (option.value !== value) continue
+      draftIsCommand = false
+      draftAction = option.keys
+      if (draftDescription.trim() === "") draftDescription = option.description
+      return
     }
   }
 
@@ -307,6 +320,30 @@ FocusScope {
           root.shortcutMessage = parsed.length ? "" : "No replayable keyboard shortcuts found. Custom keys and commands are available below."
         } catch (e) { root.shortcutMessage = "Cannot read shortcuts; custom keys and commands are available below." }
       })
+    }
+  }
+
+  Process {
+    id: keyboardProc
+    command: [root.cli, "keyboard-keys"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var parsed = JSON.parse(text)
+          root.keyboardOptions = Array.isArray(parsed) ? parsed : []
+          root.keyboardMessage = root.keyboardOptions.length ? "" : "Standard keys unavailable; type keys below."
+        } catch (e) {
+          root.keyboardOptions = []
+          root.keyboardMessage = "Standard keys unavailable; type keys below."
+        }
+      }
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.keyboardOptions = []
+        root.keyboardMessage = "Standard keys unavailable; type keys below."
+      }
     }
   }
 
@@ -684,6 +721,33 @@ FocusScope {
       Layout.fillWidth: true
       visible: root.shortcutMessage !== ""
       text: root.shortcutMessage
+      textFormat: Text.PlainText
+      color: Qt.darker(root.foreground, 1.5)
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    SearchableDropdown {
+      id: keyboardPicker
+      Layout.fillWidth: true
+      visible: !root.draftIsCommand
+      label: "STANDARD KEY (OPTIONAL)"
+      options: root.keyboardOptions
+      value: ""
+      triggerLabel: "Choose a standard key"
+      placeholderText: "Search keyboard keys…"
+      foreground: root.foreground
+      onChanged: function(value) {
+        root.chooseKeyboardKey(value)
+        keyboardPicker.value = ""
+      }
+    }
+
+    Text {
+      Layout.fillWidth: true
+      visible: !root.draftIsCommand && root.keyboardMessage !== ""
+      text: root.keyboardMessage
       textFormat: Text.PlainText
       color: Qt.darker(root.foreground, 1.5)
       wrapMode: Text.WordWrap
