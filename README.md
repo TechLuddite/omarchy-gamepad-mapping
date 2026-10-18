@@ -544,6 +544,7 @@ python3 -m unittest discover -s tests -p test_combos.py -v
 python3 -m unittest discover -s tests -p test_config.py -v
 python3 -m unittest discover -s tests -p test_devices.py -v
 python3 -m unittest discover -s tests -p test_actions.py -v
+python3 -m unittest discover -s tests -p test_pointer_integration.py -v
 python3 -m unittest discover -s tests -p test_native_modes.py -v
 python3 -m unittest discover -s tests -p test_catalog.py -v
 python3 -m unittest discover -s tests -p test_keyboard_catalog.py -v
@@ -579,6 +580,76 @@ dedicated Back fixture can be classified as a mouse; access granted
 only to joystick devices is insufficient.
 
 
+## Optional OS pointer and scrolling
+
+`engine.pointer` is a separate, disabled-by-default backend for the native mode
+integration. Importing it or validating settings never opens an input device.
+`PointerController` takes validated `PointerSettings` (or a settings object) and
+an optional output sink. The caller must run `tick(now, axes, held,
+blocked_tokens=(), allowed=False)` on idle timer ticks as well as input events.
+`now` is monotonic seconds; `axes` maps raw ABS_X/Y (0/1) and ABS_RX/RY (3/4) to
+values in -1..1; `held` contains the current aliased button tokens.
+
+`allowed` must combine OS Mode, the master switch, connection readiness and
+capture/pause policy. Game Mode passes `allowed=False`, which releases drags,
+clears fractional motion and releases dragging. The prepared mouse is retained
+across ordinary transitions and destroyed on shutdown or output failure.
+Call `reset()` after changing device, aliases or pointer settings.
+Activation ignores buttons already held until release and requires each stick
+to return within its dead zone. This prevents clicks and jumps during a mode
+change. A scheduling stall contributes at most 50 milliseconds of motion.
+
+The settings are `enabled` (false), `pointer_stick` (`left`), `scroll_stick`
+(`right`), `speed` (900 pixels/second, 1–4000), `scroll_speed` (8 steps/second,
+1–60), `dead_zone` (0.18), `scroll_dead_zone` (0.35), `invert_scroll` (false) and
+`buttons` (`{"A":"left","B":"right"}`). Stick selectors also accept `none`;
+the two active roles cannot share a stick. Dead zones must be at least zero and
+less than 0.95. Button names use normal aliases and support custom single-token
+alias targets; actions are only `left` and `right`, and an empty map is valid.
+
+Saved bindings take precedence. Supply all claimed final button tokens in
+`blocked_tokens`. Also include raw `LSTICK_*`/`RSTICK_*` directions whose aliases
+are claimed: any saved direction reserves its entire physical stick. The caller
+must preserve that raw provenance when aliases or a stick-backed d-pad rename
+those directions. Blocking a held click releases it; unblocking still requires
+a fresh press. Releasing a reserved stick requires neutral before motion.
+
+Movement uses radial dead zones, quadratic acceleration and fractional distance
+accumulation. Diagonal speed is capped to the configured speed. Horizontal
+scrolling is positive to the right; downward stick movement sends negative
+vertical wheel steps. Inversion reverses both wheel directions.
+
+`VirtualPointer` lazily creates a mouse-only uinput device with relative X/Y,
+vertical/horizontal wheels and left/right buttons. It attempts held-button
+release before destruction, including output errors. Dry-run integration must
+explicitly inject `NullPointer`; a CLI dry-run flag alone is not isolation.
+The pure backend fixtures mock every uinput syscall:
+
+```bash
+python3 -m unittest discover -s tests -p test_pointer.py -v
+```
+
+They exercise motion timing, dead zones, scrolling, saved-binding priority,
+activation guards, drag cleanup and Linux event packing without creating input
+devices. Physical pointer feel and actual compositor delivery need isolated
+integration and later device acceptance.
+
+
+The editor's **Pointer and scrolling** section keeps changes as a draft. Enable
+it, choose different pointer/scroll sticks (or None), adjust speed and dead-zone
+percentages, and set one controller token for each click. **Apply settings**
+saves the draft; **Reset edits** restores the last confirmed values. Existing
+additional click assignments are preserved. Saved controller shortcuts continue
+to override overlapping pointer buttons and stick directions.
+
+Changing fields does not enable output. Pointer controls require native mode
+switching and OS Mode; Game Mode shows an inactive summary. The editor explains
+when multiple connected controllers require a narrower selection or pointer
+output fails. It preserves unsaved settings across refreshes and serializes
+mode, binding and pointer writes. The isolated editor fixture checks those
+controls, Apply/Reset, error retention and simultaneous-write guards without
+starting a daemon or creating an input device.
+
 Overlap rows use the current face-button labels and skip disabled saved mappings.
 When the daemon reports an actual exclusive grab, the overlap message explains
 that physical events are owned by the plugin. Missing identities in Hyprland
@@ -594,6 +665,17 @@ destroying the prepared keyboard. Fast retries run only while an enabled,
 unpaused OS controller is connected and waiting for a grab; config stat checks
 keep the normal rescan frequency. In native mode, disconnecting any participant
 resets the shared chord and requires all remaining pads to release held input.
+
+Default clicks use L2/R2 because the shipped A/B mappings already claim those
+recorded tokens. Saved mappings win; mouse-button reservations use recorded
+aliases, while raw stick reservations cover the corresponding whole stick.
+Idle neutral pointer settings do not request 60 Hz polling. Frame ticks run for
+active motion, fractional output or a pending nonblocking device settle. A zero
+dead zone still accepts the normalized one-count center quantization of a
+16-bit axis. Pointer-only edits retain controller and virtual mouse objects,
+and release failures are reported without terminating the input daemon.
+The `bindings` event includes canonical saved `pointer` settings, which keeps
+other CLI/client edits visible without separate getter processes.
 
 Searchable picker popups reserve scroll space in the editor and size their
 result viewport to the window, including short windows. The installed shared

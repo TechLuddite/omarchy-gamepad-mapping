@@ -73,6 +73,7 @@ ShellRoot {
     running: true
     repeat: true
     property int stage: 0
+    property int startupWaits: 0
     readonly property var widget: widgetLoader.item
     property var panel: null
     property var editor: null
@@ -88,6 +89,23 @@ ShellRoot {
         if (match) return match
       }
       return null
+    }
+    function control(name) { return find(editor, function(item) { return item.objectName === name }) }
+    function configurePointer() {
+      control("pointerEnabledToggle").clicked()
+      control("pointerStickPicker").changed("right")
+      control("scrollStickPicker").changed("left")
+      control("pointerSpeedField").modified(1450)
+      control("scrollSpeedField").modified(12)
+      control("pointerDeadZoneField").modified(22)
+      control("scrollDeadZoneField").modified(41)
+      control("invertScrollToggle").clicked()
+      var left = control("leftClickTokenField")
+      left.forceActiveFocus(); left.selectAll()
+      keys.keyClick(Qt.Key_L); keys.keyClick(Qt.Key_2)
+      var right = control("rightClickTokenField")
+      right.forceActiveFocus(); right.selectAll()
+      keys.keyClick(Qt.Key_R); keys.keyClick(Qt.Key_2)
     }
     onTriggered: {
       if (stage === 1 && !editor.shortcutOptions.length && !editor.shortcutMessage) return
@@ -389,12 +407,63 @@ ShellRoot {
           fake._handle(JSON.stringify({event:"bindings", modes:{enabled:false,active:"os"}, bindings:fake.bindings}))
           check(!editor.configuredModesEnabled && editor.bindings[0].combo === "A", "Turning modes off preserves saved assignments")
           fake.running = false
+          check(!editor.pointerSaved.enabled && !editor.pointerDirty, "Pointer starts disabled with stable saved assignments")
+          panel.openWindow()
+        } else if (stage === 21) {
+          fake.savedPointer = {enabled:false, buttons:{A:"left",X:"left",B:"right"}}
+          configurePointer()
+          check(editor.pointerDirty && editor.pointerRevision === 0, "Editing shared controls does not write settings")
+          editor.refresh()
+        } else if (stage === 22) {
+          check(editor.pointerDirty && editor.pointerDraft.speed === 1450, "Read-only refresh preserves unsaved settings")
+          control("resetPointerButton").clicked()
+          check(!editor.pointerDirty && !editor.pointerDraft.enabled && editor.pointerLeftToken === "A", "Reset discards edits without saving")
+          configurePointer()
+          control("scrollStickPicker").changed("right")
+          editor.applyPointerSettings()
+          check(editor.pointerRevision === 0 && editor.statusMessage.indexOf("different sticks") >= 0, "Same-stick draft is rejected without writing")
+          control("scrollStickPicker").changed("left")
+          control("applyPointerButton").clicked()
+          check(editor.settingsBusy, "Apply owns the settings writer")
+          editor.saveDraft()
+          editor.removeBinding("B")
+        } else if (stage === 23) {
+          if (editor.settingsBusy) return
+          check(!editor.pointerDirty && editor.pointerSaved.enabled && editor.pointerSaved.speed === 1450, "Apply accepts confirmed settings")
+          check(editor.pointerSaved.buttons.L2 === "left" && editor.pointerSaved.buttons.R2 === "right" && editor.pointerSaved.buttons.X === "left", "Edited clicks preserve extra saved assignments")
+          check(editor.pointerRevision === 1, "Only Apply wrote pointer settings")
+          editor.setInputMode("os")
+        } else if (stage === 24) {
+          fake.savedModes = {enabled:true,active:"os"}
+          check(editor.configuredMode === "os" && control("pointerSettingsForm").visible, "OS exposes pointer settings")
+          fake._handle(JSON.stringify({event:"state", modes_enabled:true, input_mode:"os", input_ready:true, input_status:"ready", pointer_status:"select_one_controller"}))
+          check(editor.pointerDescription.indexOf("Select one controller") >= 0, "Multiple-controller status gives a useful action")
+          fake._handle(JSON.stringify({event:"state", modes_enabled:true, input_mode:"os", input_ready:true, input_status:"ready", pointer_status:"error"}))
+          check(editor.pointerDescription.indexOf("unavailable") >= 0, "Pointer output error is visible")
+          editor.setInputMode("game")
+        } else if (stage === 25) {
+          fake.savedModes = {enabled:true,active:"game"}
+          check(!control("pointerSettingsForm").visible && editor.pointerDescription.indexOf("inactive in Game") >= 0, "Game shows a read-only pointer summary")
+          editor.setInputMode("os")
+        } else if (stage === 26) {
+          fake.savedModes = {enabled:true,active:"os"}
+          control("pointerSpeedField").modified(1337)
+          control("applyPointerButton").clicked()
+        } else if (stage === 27) {
+          if (editor.settingsBusy) return
+          check(editor.pointerDirty && editor.statusMessage.indexOf("Fixture rejected") >= 0, "Failed Apply retains the draft and error")
+          control("resetPointerButton").clicked()
+          check(!editor.pointerDirty && editor.pointerDraft.speed === 1450, "Reset restores last confirmed settings after an error")
+          editor.setInputMode("disable")
+        } else if (stage === 28) {
+          fake.savedModes = {enabled:false,active:"os"}
+          check(!editor.configuredModesEnabled && editor.bindings[0].combo === "A", "Pointer edits preserve existing mappings and mode choice")
           console.log("EDITOR CHECK PASS")
           Qt.quit()
         }
         stage++
       } catch (e) {
-        console.error("EDITOR CHECK FAIL: " + e)
+        console.error("EDITOR CHECK FAIL stage " + stage + ": " + e)
         Qt.quit()
       }
     }

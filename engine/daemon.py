@@ -15,10 +15,11 @@ import sys
 import time
 
 from .actions import ActionRunner
-from .buttons import format_combo, label_overrides
+from .buttons import STICK_AXES, format_combo, label_overrides
 from .combos import ComboEngine
 from .config import PID_PATH, Config, ConfigError, load, stamp
 from .devices import DeviceGone, DeviceScanner, Gamepad
+from .pointer import NullPointer, PointerController, validate_pointer
 
 
 class Daemon:
@@ -68,6 +69,9 @@ class Daemon:
         self._neutral_required = config.modes_enabled
         self._safety_reset_requested = False
         self._last_config_check = time.monotonic()
+        self.pointer = PointerController(config.pointer, output=NullPointer() if dry_run else None)
+        self._pointer_error = ""
+        self._last_pointer_status = None
 
     @property
     def firing(self) -> bool:
@@ -107,12 +111,59 @@ class Daemon:
                 "input_status": self.input_status,
                 "input_blocker": "; ".join(filter(None, (p.safety_error or (p.acquisition_blocker if not p.grabbed else "") for p in self.pads.values()))),
                 "requested_exclusive": self.config.effective_exclusive,
-                "effective_exclusive": bool(self.pads) and all(p.grabbed for p in self.pads.values())}
+                "effective_exclusive": bool(self.pads) and all(p.grabbed for p in self.pads.values()),
+                "pointer_enabled": self.pointer.settings.enabled,
+                "pointer_status": self.pointer_status}
+
+    @property
+    def pointer_status(self) -> str:
+        if not self.pointer.settings.enabled:
+            return "disabled"
+        if self.config.input_mode != "os":
+            return "requires_os"
+        if self._pointer_error:
+            return "error"
+        if len(self.pads) > 1:
+            return "select_one_controller"
+        return "ready" if self.firing else self.input_status
+
+    def _pointer_claims(self) -> set[str]:
+        claimed = {token for binding in self.config.active_bindings() for token in binding.combo}
+        raw = set()
+        for directions in STICK_AXES.values():
+            raw.update(directions)
+        return claimed | {token for token in raw if self.config.aliases.get(token, token) in claimed}
+
+    def _tick_pointer(self, now: float, held_override=None) -> None:
+        allowed = (self.config.modes_enabled and self.config.input_mode == "os"
+                   and self.firing and len(self.pads) == 1 and not self._pointer_error)
+        pad = next(iter(self.pads.values())) if allowed else None
+        try:
+            held = ({pad.aliases.get(token, token) for token in pad.held} if pad else set())
+            if pad is not None and held_override is not None:
+                held = held_override
+            self.pointer.tick(now, pad.axes if pad else {}, held,
+                              self._pointer_claims(), allowed=allowed)
+        except (OSError, ValueError) as exc:
+            self._pointer_error = str(exc)
+            self.emit("error", message=f"pointer output unavailable: {exc}; reload settings to retry")
+        status = self.pointer_status
+        if status != self._last_pointer_status:
+            self._last_pointer_status = status
+            self.emit_state()
 
     def _reset_outputs(self) -> None:
         """Transition hook: forget chords; key taps already release their output."""
         self.engine.reset()
         self._held_by.clear()
+        self._reset_pointer()
+
+    def _reset_pointer(self, *, close=False):
+        try:
+            self.pointer.close() if close else self.pointer.reset()
+        except (OSError, ValueError) as exc:
+            self._pointer_error = str(exc)
+            self.emit("error", message=f"pointer release failed: {exc}")
 
     def _arm_neutral(self, *, resnapshot: bool = True) -> None:
         self._reset_outputs()
@@ -178,6 +229,7 @@ class Daemon:
             labels=label_overrides(layout),
             aliases=self.config.aliases,
             modes=self.config.modes or {"enabled": False, "active": "game"},
+            pointer=self.config.pointer,
             bindings=[
                 {**b.to_dict(), "label": b.label(layout)} for b in self.config.bindings
             ],
@@ -306,6 +358,9 @@ class Daemon:
         was_modes = self.config.modes_enabled
         was_match = self.config.device["match"]
         self.config = new_config
+        self._reset_pointer()
+        self.pointer.settings = validate_pointer(new_config.pointer)
+        self._pointer_error = ""
         if was_modes or new_config.modes_enabled:
             self._reset_outputs()
             self._neutral_required = new_config.modes_enabled
@@ -450,6 +505,8 @@ class Daemon:
                           pressed=pressed, held=sorted(held))
             for activation in activations:
                 self._fire(activation)
+            # Preserve quick press/release pairs drained in the same batch.
+            self._tick_pointer(now, held)
         self._advance_neutral()
         if previous_status != self.input_status:
             self.emit_state()
@@ -510,12 +567,18 @@ class Daemon:
 
             self._process_safety_changes()
 
+            # Seed pointer quarantine while inputs are neutral before waiting
+            # for the next event, rather than quarantining the first real click.
+            self._tick_pointer(time.monotonic())
+
             now = time.monotonic()
             deadline = self.engine.next_deadline()
             timeout = rescan_interval - (now - self._last_scan)
             if deadline is not None:
                 timeout = min(timeout, max(0.0, deadline - now))
             timeout = max(0.0, min(timeout, rescan_interval))
+            if self.pointer.needs_tick and self.firing:
+                timeout = min(timeout, 1 / 60)
             if self._waiting_for_grab():
                 timeout = min(timeout, 0.05)
 
@@ -556,6 +619,7 @@ class Daemon:
 
             for activation in self.engine.tick(time.monotonic()):
                 self._fire(activation)
+            self._tick_pointer(time.monotonic())
 
             self.runner.reap()
             now = time.monotonic()
@@ -647,4 +711,5 @@ class Daemon:
             pad = self.pads.pop(path)
             pad.close()
         self.runner.close()
+        self._reset_pointer(close=True)
         self.emit("stopped")

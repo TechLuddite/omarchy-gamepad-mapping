@@ -7,9 +7,11 @@ import json
 import os
 import tempfile
 from contextlib import contextmanager
+from copy import deepcopy
 from pathlib import Path
 
 from .buttons import format_combo, normalize_button, parse_combo
+from .pointer import PointerConfigError, validate_pointer
 
 CONFIG_VERSION = 1
 
@@ -225,6 +227,8 @@ class Config:
         if modes.get("active", "game") not in ("game", "os"):
             raise ConfigError("modes.active must be game or os")
         self.modes = {"enabled": modes.get("enabled", False), "active": modes.get("active", "game")}
+        self._pointer_present = "pointer" in raw
+        self.pointer = self._read_pointer(raw.get("pointer", {}))
 
         raw_device = raw.get("device") or {}
         if not isinstance(raw_device, dict):
@@ -289,6 +293,16 @@ class Config:
                 )
             seen[binding.combo] = index
             self.bindings.append(binding)
+
+    @staticmethod
+    def _read_pointer(raw: dict) -> dict:
+        if not isinstance(raw, dict):
+            raise ConfigError("pointer must be an object")
+        try:
+            settings = validate_pointer(raw)
+        except PointerConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+        return {name: deepcopy(getattr(settings, name)) for name in settings.__dataclass_fields__}
 
     # -- accessors ----------------------------------------------------------
 
@@ -369,6 +383,8 @@ class Config:
         }
         if self._modes_present or self.modes != {"enabled": False, "active": "game"}:
             result["modes"] = dict(self.modes)
+        if self._pointer_present or self.pointer != self._read_pointer({}):
+            result["pointer"] = deepcopy(self.pointer)
         return result
 
     def save(self, path: Path | None = None) -> Path:

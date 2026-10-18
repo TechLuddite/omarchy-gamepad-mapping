@@ -9,7 +9,9 @@ import select
 import signal
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
+from contextlib import nullcontext
 
 from . import __version__
 from .actions import ActionRunner
@@ -20,6 +22,7 @@ from .daemon import Daemon
 from .devices import DeviceGone, Gamepad, find_pads, scan
 from .keys import KeyParseError, parse_keys
 from .keyboard_catalog import keyboard_catalog
+from .pointer import PointerConfigError, validate_pointer
 
 # -- output helpers ----------------------------------------------------------
 
@@ -226,6 +229,36 @@ def cmd_conflicts(args) -> int:
               f"submap {binding['submap'] or 'default'}]: {binding['description']}")
     if not context["bindings"]:
         print(" No recognized mappings.")
+    return 0
+
+
+def cmd_pointer(args) -> int:
+    update = {}
+    if args.update is not None:
+        try:
+            update = json.loads(args.update)
+        except ValueError as exc:
+            raise ConfigError("pointer --set requires a JSON object") from exc
+        if not isinstance(update, dict):
+            raise ConfigError("pointer --set requires a JSON object")
+    if args.selection is not None:
+        update["enabled"] = args.selection == "enable"
+    mutating = args.update is not None or args.selection is not None
+    with (_edit(args) if mutating else nullcontext(_load(args))) as config:
+        try:
+            settings = validate_pointer({**config.pointer, **update})
+        except PointerConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+        if mutating:
+            config.pointer = asdict(settings)
+            config._pointer_present = True
+            config.save()
+    if mutating:
+        _notify_daemon(signal.SIGHUP)
+    if args.json:
+        print(json.dumps(asdict(settings)))
+    else:
+        print("Pointer settings " + ("enabled (OS mode required)" if settings.enabled else "disabled"))
     return 0
 
 
@@ -599,6 +632,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("selection", nargs="?", choices=("game", "os", "enable", "disable"))
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_mode)
+
+    p = sub.add_parser("pointer", help="inspect or configure optional OS pointer controls")
+    p.add_argument("selection", nargs="?", choices=("enable", "disable"))
+    p.add_argument("--set", dest="update", help="merge a JSON object of pointer settings")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_pointer)
 
     p = sub.add_parser("monitor", help="print buttons as you press them")
     p.add_argument("--timeout", type=float, default=30.0)

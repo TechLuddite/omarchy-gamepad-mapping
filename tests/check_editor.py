@@ -42,6 +42,23 @@ import json, os, sys
 from pathlib import Path
 with (Path(os.environ['HOME']) / 'calls.jsonl').open('a') as stream:
     stream.write(json.dumps(sys.argv[1:]) + '\\n')
+pointer_path = Path(os.environ['HOME']) / 'pointer.json'
+pointer_defaults = {'enabled': False, 'pointer_stick': 'left', 'scroll_stick': 'right',
+    'speed': 900, 'scroll_speed': 8, 'dead_zone': .18, 'scroll_dead_zone': .35,
+    'invert_scroll': False, 'buttons': {'A': 'left', 'X': 'left', 'B': 'right'}}
+if sys.argv[1:] == ['pointer', '--json']:
+    print(pointer_path.read_text() if pointer_path.exists() else json.dumps(pointer_defaults))
+    raise SystemExit(0)
+if len(sys.argv) == 5 and sys.argv[1:3] == ['pointer', '--set'] and sys.argv[4] == '--json':
+    update = json.loads(sys.argv[3])
+    if update.get('speed') == 1337:
+        print('Fixture rejected settings', file=sys.stderr)
+        sys.exit(1)
+    state = json.loads(pointer_path.read_text()) if pointer_path.exists() else pointer_defaults
+    state.update(update)
+    pointer_path.write_text(json.dumps(state))
+    print(json.dumps(state))
+    raise SystemExit(0)
 if sys.argv[1:] == ['shortcuts']:
     print(CATALOG_RESPONSE)
     raise SystemExit(0)
@@ -100,6 +117,8 @@ if sys.argv[1:3] == ['bind', 'Z']:
                             env=env, text=True, capture_output=True, timeout=20)
     output = result.stdout + result.stderr
     print(output, end='')
+    if 'EDITOR CHECK PASS' not in output:
+        print((root / 'home/calls.jsonl').read_text() if (root / 'home/calls.jsonl').exists() else 'No fake CLI calls')
     assert result.returncode == 0 and 'EDITOR CHECK PASS' in output, result.returncode
     calls = (root / 'home/calls.jsonl').read_text()
     import json
@@ -110,8 +129,18 @@ if sys.argv[1:3] == ['bind', 'Z']:
     assert ["keyboard-keys"] in calls, calls
     assert sum(call == ["conflicts", "--json"] for call in calls) >= 2, calls
     calls = [call for call in calls if call not in (["shortcuts"], ["keyboard-keys"], ["conflicts", "--json"])]
-    assert [call for call in calls if call[0] == "mode" and call != ["mode", "--json"]] == [["mode", "game"], ["mode", "os"], ["mode", "disable"]], calls
+    assert [call for call in calls if call[0] == "mode" and call != ["mode", "--json"]] == [["mode", "game"], ["mode", "os"], ["mode", "disable"], ["mode", "os"], ["mode", "game"], ["mode", "os"], ["mode", "disable"]], calls
     calls = [call for call in calls if call[0] != "mode"]
+    pointer_calls = [call for call in calls if call[0] == 'pointer' and '--set' in call]
+    assert len(pointer_calls) == 2, pointer_calls
+    assert all(call[1] == '--set' and call[3] == '--json' for call in pointer_calls), pointer_calls
+    applied = json.loads(pointer_calls[0][2])
+    assert applied == {'enabled': True, 'pointer_stick': 'right', 'scroll_stick': 'left',
+        'speed': 1450, 'scroll_speed': 12, 'dead_zone': .22, 'scroll_dead_zone': .41,
+        'invert_scroll': True, 'buttons': {'X': 'left', 'L2': 'left', 'R2': 'right'}}, applied
+    assert json.loads(pointer_calls[1][2])['speed'] == 1337
+    assert json.loads((root / 'home/pointer.json').read_text()) == applied
+    calls = [call for call in calls if call[0] != "pointer"]
     assert calls == [
         ['bind', 'B', '--keys', 'SUPER+j', '--description', 'custom keys'],
         ['bind', 'X', '--exec', "printf 'custom command'", '--description', 'custom command'],

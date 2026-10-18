@@ -29,12 +29,14 @@ Item {
   // Master switch, persisted in the config file. Not called `enabled`, which
   // would override Item's own property of that name.
   property bool switchedOn: true
+  property var savedPointer: ({})
   property var savedModes: ({enabled:false, active:"game"})
   property string inputBlocker: ""
   property bool modesEnabled: false
   property string inputMode: "legacy"
   property bool inputReady: false
   property string inputStatus: "disconnected"
+  property string pointerStatus: "disabled"
   // Transient mute, held only while the panel is recording a combo.
   property bool paused: false
   property string deviceName: ""
@@ -203,6 +205,7 @@ Item {
       if (event.input_mode !== undefined) root.inputMode = String(event.input_mode)
       if (event.input_ready !== undefined) root.inputReady = event.input_ready === true
       if (event.input_status !== undefined) root.inputStatus = String(event.input_status)
+      if (event.pointer_status !== undefined) root.pointerStatus = String(event.pointer_status)
       root.connected = event.connected === true
       root.bindingCount = Number(event.bindings) || 0
       root.exclusive = event.exclusive === true
@@ -222,6 +225,7 @@ Item {
       root.heldButtons = Array.isArray(event.held) ? event.held : []
       break
     case "bindings":
+      root.savedPointer = event.pointer || {}
       root.savedModes = event.modes || ({enabled:false, active:"game"})
       root.bindings = Array.isArray(event.bindings) ? event.bindings : []
       root.deviceAliases = event.aliases || {}
@@ -253,6 +257,7 @@ Item {
       root.ready = false
       root.inputReady = false
       root.inputStatus = "disconnected"
+      root.pointerStatus = "disconnected"
       break
     }
   }
@@ -278,6 +283,9 @@ Item {
       root.running = false
       root.ready = false
       root.connected = false
+      root.inputReady = false
+      root.inputStatus = "disconnected"
+      root.pointerStatus = "disconnected"
       root.heldButtons = []
       if (exitCode !== 0 && root.lastError === "")
         root.lastError = "daemon exited with code " + exitCode
@@ -365,6 +373,7 @@ Item {
         input_mode: root.inputMode,
         input_ready: root.inputReady,
         input_status: root.inputStatus,
+        pointer_status: root.pointerStatus,
         device: root.deviceName,
         bindings: root.bindingCount,
         exclusive: root.exclusive,

@@ -61,6 +61,7 @@ FocusScope {
   }
 
   property string statusMessage: ""
+  readonly property bool bindingWritesBlocked: settingsOperation !== "" || pointerProc.running || modeProc.running
   readonly property bool refreshing: mappingsProc.running || keyboardProc.running || shortcutsProc.running
   readonly property bool configuredModesEnabled: service ? service.savedModes.enabled === true : false
   readonly property string configuredMode: service ? service.savedModes.active : "game"
@@ -80,6 +81,29 @@ FocusScope {
     if (status === "paused") return "OS controls are paused while recording a combo."
     if (status === "disconnected") return "Connect the selected controller to activate OS controls."
     return service.inputReady ? "OS active: desktop shortcuts." : "OS controls are waiting for the controller."
+  }
+  property string settingsOperation: ""
+  readonly property bool settingsBusy: settingsOperation !== "" || modeProc.running || mutateProc.running || pointerProc.running
+  property var pointerSaved: pointerDefaults()
+  property var pointerDraft: pointerDefaults()
+  property string pointerLeftSource: "L2"
+  property string pointerRightSource: "R2"
+  property string pointerLeftToken: "L2"
+  property string pointerRightToken: "R2"
+  property var pointerResult: null
+  property int pointerRevision: 0
+  readonly property bool pointerDirty: pointerFingerprint(pointerSettingsDraft()) !== pointerFingerprint(pointerSaved)
+  readonly property bool pointerEditingVisible: !configuredModesEnabled || configuredMode !== "game"
+  readonly property string pointerDescription: {
+    if (!configuredModesEnabled) return "Pointer and scrolling require OS Mode. Settings stay inactive until then."
+    if (configuredMode === "game") return "Pointer and scrolling are inactive in Game Mode." + (pointerDirty ? " Unsaved edits are retained." : "")
+    if (!pointerSaved.enabled) return "Pointer and scrolling are off. Enable them below, then Apply settings."
+    var status = service && "pointerStatus" in service ? service.pointerStatus : ""
+    if (status === "select_one_controller") return "Select one controller in the plugin configuration to use pointer controls."
+    if (status === "error") return "Pointer output is unavailable. Check controller permissions and reload."
+    if (status === "requires_os") return "Pointer settings are saved; waiting for OS Mode."
+    if (status === "ready") return "Pointer and scrolling are ready in OS Mode."
+    return "Pointer settings are saved. " + root.modeDescription
   }
   property var shortcutOptions: []
   property string shortcutMessage: ""
@@ -128,6 +152,99 @@ FocusScope {
 
   readonly property string cli: service ? service.cli : ""
 
+  function pointerDefaults() {
+    return { enabled: false, pointer_stick: "left", scroll_stick: "right", speed: 900,
+      scroll_speed: 8, dead_zone: 0.18, scroll_dead_zone: 0.35, invert_scroll: false,
+      buttons: { L2: "left", R2: "right" } }
+  }
+
+  function copyObject(value) { return JSON.parse(JSON.stringify(value)) }
+
+  function pointerFingerprint(value) {
+    var ordered = {}
+    var keys = Object.keys(value).sort()
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i] !== "buttons") ordered[keys[i]] = value[keys[i]]
+      else {
+        ordered.buttons = {}
+        var tokens = Object.keys(value.buttons).sort()
+        for (var j = 0; j < tokens.length; j++) ordered.buttons[tokens[j]] = value.buttons[tokens[j]]
+      }
+    }
+    return JSON.stringify(ordered)
+  }
+
+  function firstClickToken(buttons, action) {
+    var tokens = Object.keys(buttons).sort()
+    for (var i = 0; i < tokens.length; i++) if (buttons[tokens[i]] === action) return tokens[i]
+    return ""
+  }
+
+  function normalizedPointerToken(token) {
+    return token.trim().toUpperCase().replace(/-/g, "_").replace(/ /g, "_")
+  }
+
+  function pointerSettingsDraft() {
+    var draft = copyObject(pointerDraft)
+    // Replace the two displayed assignments while preserving extra saved clicks.
+    delete draft.buttons[pointerLeftSource]
+    delete draft.buttons[pointerRightSource]
+    var left = normalizedPointerToken(pointerLeftToken)
+    var right = normalizedPointerToken(pointerRightToken)
+    if (left) draft.buttons[left] = "left"
+    if (right) draft.buttons[right] = "right"
+    return draft
+  }
+
+  function resetPointerDraft() {
+    pointerDraft = copyObject(pointerSaved)
+    pointerLeftSource = firstClickToken(pointerSaved.buttons, "left")
+    pointerRightSource = firstClickToken(pointerSaved.buttons, "right")
+    pointerLeftToken = pointerLeftSource
+    pointerRightToken = pointerRightSource
+  }
+
+  function acceptPointer(value, force) {
+    var dirty = pointerDirty
+    var saved = pointerDefaults()
+    if (value && typeof value === "object") {
+      var keys = Object.keys(saved)
+      for (var i = 0; i < keys.length; i++) {
+        if (Object.prototype.hasOwnProperty.call(value, keys[i])) saved[keys[i]] = value[keys[i]]
+      }
+    }
+    pointerSaved = saved
+    if (force || !dirty) resetPointerDraft()
+  }
+
+  function editPointerSetting(name, value) {
+    var draft = copyObject(pointerDraft)
+    draft[name] = value
+    pointerDraft = draft
+  }
+
+  function applyPointerSettings() {
+    if (settingsBusy || !pointerDirty) return
+    var draft = pointerSettingsDraft()
+    var left = normalizedPointerToken(pointerLeftToken)
+    var right = normalizedPointerToken(pointerRightToken)
+    if ((left && !/^[A-Z0-9_]+$/.test(left)) || (right && !/^[A-Z0-9_]+$/.test(right)) || (left && left === right)) {
+      statusMessage = "Use one controller token for each click, with different tokens for left and right."
+      return
+    }
+    if (draft.pointer_stick !== "none" && draft.pointer_stick === draft.scroll_stick) {
+      statusMessage = "Choose different sticks for pointer and scrolling, or set one to None."
+      return
+    }
+    if (service && service.capturing) service.cancelCapture()
+    pointerResult = null
+    settingsOperation = "pointer"
+    pointerRevision++
+    pointerProc.command = [root.cli, "pointer", "--set", JSON.stringify(draft), "--json"]
+    pointerProc.running = true
+  }
+
+
   function refresh() {
     loadMappings()
     shortcutsLoaded = false
@@ -153,8 +270,9 @@ FocusScope {
   property string pendingMode: ""
   function setInputMode(value) {
     if (["game", "os", "enable", "disable"].indexOf(value) < 0) return
-    if (modeProc.running) { pendingMode = value; return }
+    if (settingsBusy) { pendingMode = value; return }
     if (service && service.capturing) service.cancelCapture()
+    settingsOperation = "mode"
     modeProc.command = [root.cli, "mode", value]
     modeProc.running = true
   }
@@ -268,7 +386,7 @@ FocusScope {
   }
 
   function saveDraft() {
-    if (!root.draftReady || !service) return
+    if (!root.draftReady || !service || bindingWritesBlocked) return
     var args = [service.cli, "bind", root.draftCombo.join(" + ")]
     args.push(root.draftIsCommand ? "--exec" : "--keys")
     args.push(root.draftAction.trim())
@@ -282,7 +400,7 @@ FocusScope {
   }
 
   function removeBinding(combo) {
-    if (service) root.runCli([service.cli, "unbind", combo], false)
+    if (service && !bindingWritesBlocked) root.runCli([service.cli, "unbind", combo], false)
   }
 
   function clearDraft() {
@@ -326,8 +444,10 @@ FocusScope {
     }
   }
 
+  onServiceChanged: if (service) acceptPointer(service.savedPointer, false)
   Connections {
     target: root.service
+    function onSavedPointerChanged() { root.acceptPointer(root.service.savedPointer, false) }
     enabled: root.service !== null
     function onComboCaptured(combo) {
       root.draftCombo = combo
@@ -364,9 +484,34 @@ FocusScope {
     stderr: StdioCollector { waitForEnd: true; onStreamFinished: modeProc.errorText = text.trim() }
     onExited: function(exitCode) {
       Qt.callLater(function() {
+        root.settingsOperation = ""
         root.statusMessage = exitCode === 0 ? "" : (modeProc.errorText || "Mode update failed (exit code " + exitCode + ").")
         if (root.pendingMode) { var next = root.pendingMode; root.pendingMode = ""; root.setInputMode(next) }
       })
+    }
+  }
+
+  Process {
+    id: pointerProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try { root.pointerResult = JSON.parse(text) } catch (e) { root.pointerResult = null }
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim()) root.statusMessage = text.trim()
+    }
+    onExited: function(exitCode) {
+      root.settingsOperation = ""
+      if (exitCode === 0) {
+        if (root.pointerResult && typeof root.pointerResult === "object") {
+          root.acceptPointer(root.pointerResult, true)
+          root.statusMessage = ""
+        } else root.statusMessage = "Settings saved, but readback failed. Reload to confirm them."
+        if (root.pendingMode) { var next = root.pendingMode; root.pendingMode = ""; root.setInputMode(next) }
+      }
     }
   }
 
@@ -380,6 +525,7 @@ FocusScope {
       }
     }
     onExited: function (exitCode) {
+      root.settingsOperation = ""
       if (exitCode === 0) {
         root.statusMessage = ""
         if (clearsDraft) root.clearDraft()
@@ -387,6 +533,7 @@ FocusScope {
         root.statusMessage = "The edit failed (exit code " + exitCode + ")."
       }
       root._runNext()
+      if (!mutateProc.running && root.pendingMode) { var next = root.pendingMode; root.pendingMode = ""; root.setInputMode(next) }
     }
   }
 
@@ -557,6 +704,165 @@ FocusScope {
       font.pixelSize: Style.font.caption
     }
 
+    PanelSectionHeader { text: "POINTER AND SCROLLING"; foreground: root.foreground }
+
+    Text {
+      Layout.fillWidth: true
+      text: root.pointerDescription
+      textFormat: Text.PlainText
+      color: root.foreground
+      wrapMode: Text.WordWrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    ColumnLayout {
+      objectName: "pointerSettingsForm"
+      Layout.fillWidth: true
+      visible: root.pointerEditingVisible
+      enabled: !root.settingsBusy
+      spacing: Style.space(8)
+
+      Toggle {
+        objectName: "pointerEnabledToggle"
+        Layout.fillWidth: true
+        label: "Enable pointer and scrolling"
+        checked: root.pointerDraft.enabled
+        foreground: root.foreground
+        onClicked: root.editPointerSetting("enabled", !root.pointerDraft.enabled)
+      }
+
+      GridLayout {
+        Layout.fillWidth: true
+        columns: root.width < Style.space(460) ? 1 : 2
+        columnSpacing: Style.space(12)
+        rowSpacing: Style.space(8)
+        enabled: root.pointerDraft.enabled
+
+        Dropdown {
+          objectName: "pointerStickPicker"
+          Layout.fillWidth: true
+          label: "Pointer stick"
+          options: [{value:"left", label:"Left"}, {value:"right", label:"Right"}, {value:"none", label:"None"}]
+          value: root.pointerDraft.pointer_stick
+          foreground: root.foreground
+          onChanged: function(value) { root.editPointerSetting("pointer_stick", value) }
+        }
+        Dropdown {
+          objectName: "scrollStickPicker"
+          Layout.fillWidth: true
+          label: "Scroll stick"
+          options: [{value:"left", label:"Left"}, {value:"right", label:"Right"}, {value:"none", label:"None"}]
+          value: root.pointerDraft.scroll_stick
+          foreground: root.foreground
+          onChanged: function(value) { root.editPointerSetting("scroll_stick", value) }
+        }
+        NumberField {
+          objectName: "pointerSpeedField"
+          Layout.fillWidth: true
+          label: "Pointer speed (px/s)"
+          value: Math.round(root.pointerDraft.speed)
+          from: 1; to: 4000; stepSize: 50
+          foreground: root.foreground
+          onModified: function(value) { root.editPointerSetting("speed", value) }
+        }
+        NumberField {
+          objectName: "scrollSpeedField"
+          Layout.fillWidth: true
+          label: "Scroll speed (steps/s)"
+          value: Math.round(root.pointerDraft.scroll_speed)
+          from: 1; to: 60
+          foreground: root.foreground
+          onModified: function(value) { root.editPointerSetting("scroll_speed", value) }
+        }
+        NumberField {
+          objectName: "pointerDeadZoneField"
+          Layout.fillWidth: true
+          label: "Pointer dead zone (%)"
+          value: Math.round(root.pointerDraft.dead_zone * 100)
+          from: 0; to: 94
+          foreground: root.foreground
+          onModified: function(value) { root.editPointerSetting("dead_zone", value / 100) }
+        }
+        NumberField {
+          objectName: "scrollDeadZoneField"
+          Layout.fillWidth: true
+          label: "Scroll dead zone (%)"
+          value: Math.round(root.pointerDraft.scroll_dead_zone * 100)
+          from: 0; to: 94
+          foreground: root.foreground
+          onModified: function(value) { root.editPointerSetting("scroll_dead_zone", value / 100) }
+        }
+      }
+
+      Toggle {
+        objectName: "invertScrollToggle"
+        Layout.fillWidth: true
+        label: "Invert scrolling"
+        checked: root.pointerDraft.invert_scroll
+        enabled: root.pointerDraft.enabled
+        foreground: root.foreground
+        onClicked: root.editPointerSetting("invert_scroll", !root.pointerDraft.invert_scroll)
+      }
+
+      Text {
+        Layout.fillWidth: true
+        text: "Saved mappings reserve their recorded tokens. Defaults use unassigned L2/R2 for clicks; A/B keep their shortcuts. Blank click fields disable that click."
+        textFormat: Text.PlainText
+        color: Qt.darker(root.foreground, 1.5)
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+      Text { text: "Left click token"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+      TextField {
+        objectName: "leftClickTokenField"
+        Layout.fillWidth: true
+        enabled: root.pointerDraft.enabled
+        foreground: root.foreground
+        text: root.pointerLeftToken
+        placeholderText: "e.g. A, L2 or a configured alias"
+        onTextEdited: root.pointerLeftToken = text
+      }
+      Text { text: "Right click token"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+      TextField {
+        objectName: "rightClickTokenField"
+        Layout.fillWidth: true
+        enabled: root.pointerDraft.enabled
+        foreground: root.foreground
+        text: root.pointerRightToken
+        placeholderText: "e.g. B, R2 or a configured alias"
+        onTextEdited: root.pointerRightToken = text
+      }
+      RowLayout {
+        Layout.fillWidth: true
+        Button {
+          objectName: "applyPointerButton"
+          text: "Apply settings"
+          enabled: root.pointerDirty && !root.settingsBusy
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.applyPointerSettings()
+        }
+        Button {
+          objectName: "resetPointerButton"
+          text: "Reset edits"
+          enabled: root.pointerDirty && !root.settingsBusy
+          focusable: root.windowMode
+          bordered: true
+          foreground: root.foreground
+          onClicked: root.resetPointerDraft()
+        }
+        Text {
+          text: root.pointerDirty ? "Unsaved changes" : "Saved"
+          color: root.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+    }
+
     // ---- status: device, live buttons, master switch, refresh --------
 
     RowLayout {
@@ -615,7 +921,7 @@ FocusScope {
         checked: root.switchedOn
         busy: root.service ? root.service.enableBusy : false
         foreground: root.foreground
-        onToggled: if (root.service) root.service.toggleEnabled()
+        onToggled: if (!root.settingsBusy && root.service) root.service.toggleEnabled()
       }
 
       PanelActionButton {
@@ -778,6 +1084,7 @@ FocusScope {
                 Layout.alignment: Qt.AlignTop
                 iconText: "󰆴"
                 tooltipText: "Remove binding"
+                enabled: !root.bindingWritesBlocked
                 foreground: root.foreground
                 hoverColor: Commons.Color.urgent
                 onClicked: root.removeBinding(bindingRow.modelData.combo)
@@ -1021,7 +1328,7 @@ FocusScope {
 
         focusable: root.windowMode
         text: root.draftExisting ? "3. Save changes" : "3. Save binding"
-        enabled: root.draftReady
+        enabled: root.draftReady && !root.bindingWritesBlocked
         bordered: true
         foreground: root.foreground
         onClicked: root.saveDraft()
