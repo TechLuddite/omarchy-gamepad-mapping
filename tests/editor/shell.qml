@@ -89,6 +89,7 @@ ShellRoot {
       return null
     }
     onTriggered: {
+      if (stage === 1 && !editor.shortcutOptions.length && !editor.shortcutMessage) return
       try {
         if (stage === 0) {
           check(fake.editor === null, "Checking bar state does not load editor")
