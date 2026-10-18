@@ -60,6 +60,12 @@ ShellRoot {
     property int code: -1
     onExited: function(exitCode) { code = exitCode }
   }
+  Process {
+    id: compositorClose
+    command: [Quickshell.env("CONTROLLER_TEST_SWAYMSG"), "-s", Quickshell.env("CONTROLLER_TEST_SWAYSOCK"), "[title=\"Controller Control\"] kill"]
+    property int code: -1
+    onExited: function(exitCode) { code = exitCode }
+  }
   TestCase { id: keys; when: false }
   Timer {
     interval: 120
@@ -273,8 +279,10 @@ ShellRoot {
           if (ipcClose.running || ipcClose.code < 0) return
           check(ipcClose.code === 0 && panel.windowOpened && !panel.opened, "Real openWindow IPC opens the ordinary window")
           editor.beginCapture()
-          editor.Window.window.close()
+          if (Quickshell.env("CONTROLLER_TEST_SWAYSOCK")) compositorClose.running = true
+          else editor.Window.window.close()
         } else if (stage === 17) {
+          if (compositorClose.running) return
           check(!panel.windowOpened && !fake.capturing, "Window close event releases capture")
           console.log("EDITOR CHECK PASS")
           Qt.quit()
