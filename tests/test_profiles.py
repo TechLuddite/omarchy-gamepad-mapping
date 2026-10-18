@@ -286,6 +286,20 @@ class ProfileConfigTests(unittest.TestCase):
 
 
 class ProfileCliTests(unittest.TestCase):
+    def test_stale_active_mirror_cannot_be_saved_by_unrelated_cli_edit(self):
+        raw=configured().to_dict()
+        raw['profiles']['active']='Current'
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'config.json'
+            path.write_text(json.dumps(raw))
+            before=path.read_bytes()
+            with patch('engine.cli._notify_daemon') as notify, contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                result=main(['--config',str(path),'mode','os'])
+            self.assertNotEqual(result,0)
+            self.assertEqual(path.read_bytes(),before)
+            notify.assert_not_called()
+
+
     def invoke(self, config, *arguments):
         output = io.StringIO()
         with patch("engine.cli._load", return_value=config), \
