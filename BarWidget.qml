@@ -1,9 +1,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import qs.Commons
 import qs.Commons as Commons
-import qs.Ui
+import qs.Ui as Ui
 
 // Controller indicator for the bar.
 //
@@ -11,7 +10,7 @@ import qs.Ui
 // whenever a binding fires, which doubles as the "is this thing working?"
 // answer without opening anything, and pulses red when one fails. Left click
 // opens the bindings panel.
-BarWidget {
+Ui.BarWidget {
   id: root
   moduleName: "co.klair.controller-control"
 
@@ -114,7 +113,7 @@ BarWidget {
   // hasVisualContent from its *text*, so an icon-only widget with empty text
   // reports no content and the bar collapses it to zero width. BarIconButton
   // owns the glyph, the icon slot sizing, and the optical centering.
-  BarIconButton {
+  Ui.BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar

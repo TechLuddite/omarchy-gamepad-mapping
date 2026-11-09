@@ -1,12 +1,11 @@
 import QtQuick
 import Quickshell
-import qs.Commons
 import qs.Commons as Commons
-import qs.Ui
+import qs.Ui as Ui
 
 // Keep bar access as a popup; an ordinary window also supports touch keyboards
 // without the popup's overlay layer intercepting taps outside the editor.
-Panel {
+Ui.Panel {
   id: root
   moduleName: "co.klair.controller-control"
   ipcTarget: "co.klair.controller-control"
@@ -52,7 +51,7 @@ Panel {
     while (ancestor && ancestor !== editor) ancestor = ancestor.parent
     if (ancestor !== editor) return
     var point = item.mapToItem(scroll.contentItem, 0, 0)
-    var margin = Style.space(8)
+    var margin = Commons.Style.space(8)
     var top = point.y
     var bottom = top + item.height
     var offset = scroll.contentY
@@ -112,14 +111,14 @@ Panel {
     onFocusRequested: root.revealFocus()
   }
 
-  KeyboardPanel {
+  Ui.KeyboardPanel {
     id: popup
     anchorItem: root.anchorItem
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
     focusTarget: editor
-    contentWidth: popup.fittedContentWidth(Style.space(470))
+    contentWidth: popup.fittedContentWidth(Commons.Style.space(470))
     contentHeight: popup.fittedContentHeight(editor.implicitHeight)
 
     Flickable {
@@ -139,15 +138,15 @@ Panel {
     title: "Controller Control"
     visible: false
     color: Commons.Color.popups.background
-    implicitWidth: Style.space(600)
-    implicitHeight: Style.space(680)
+    implicitWidth: Commons.Style.space(600)
+    implicitHeight: Commons.Style.space(680)
     minimumSize: Qt.size(320, 240)
     onVisibleChanged: if (!visible && !root.opened) root.cancelCaptureIfActive()
 
     Flickable {
       id: windowScroll
       anchors.fill: parent
-      anchors.margins: Style.space(18)
+      anchors.margins: Commons.Style.space(18)
       contentWidth: width
       contentHeight: editor.implicitHeight
       clip: true

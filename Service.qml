@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
 // Headless half of the plugin: owns the controller-control daemon.
@@ -272,7 +273,7 @@ Item {
     id: daemon
     // The daemon leaves when this pipe closes, so a crashed shell cannot
     // leave it running beside the one the next shell starts.
-    command: [root.cli, "daemon", "--exit-with-stdin"]
+    command: [Quickshell.env("HOME") + "/.local/bin/odin-native-mapper", "engine", "daemon", "--exit-with-stdin"]
     stdinEnabled: true
     running: false
 

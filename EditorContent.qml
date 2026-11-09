@@ -3,9 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
 import Quickshell.Io
-import qs.Commons
 import qs.Commons as Commons
-import qs.Ui
+import qs.Ui as Ui
 
 // One maintainer-based form shared by the bar popup and ordinary window.
 FocusScope {
@@ -29,7 +28,7 @@ FocusScope {
       }
     }
   }
-  readonly property real pickerPopupHeight: Math.min(Style.space(320), Math.max(Style.space(70), (Window.window ? Window.window.height : 680) - Style.space(100)))
+  readonly property real pickerPopupHeight: Math.min(Commons.Style.space(320), Math.max(Commons.Style.space(70), (Window.window ? Window.window.height : 680) - Commons.Style.space(100)))
   implicitHeight: form.implicitHeight
   height: implicitHeight
   focus: true
@@ -676,7 +675,7 @@ FocusScope {
     }
   }
 
-  PanelKeyCatcher {
+  Ui.PanelKeyCatcher {
     id: keyCatcher
     anchors.fill: parent
     // Text fields and focused buttons keep their normal editing/Tab keys.
@@ -771,22 +770,22 @@ FocusScope {
   ColumnLayout {
     id: form
     width: parent.width
-    spacing: Style.space(10)
+    spacing: Commons.Style.space(10)
 
     // ---- header: title, device status, messages, tabs ----------------
 
     RowLayout {
       Layout.fillWidth: true
-      spacing: Style.space(8)
+      spacing: Commons.Style.space(8)
       Text {
         Layout.fillWidth: true
         text: "Controller Control"
         color: root.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.body
         font.bold: true
       }
-      Button {
+      Ui.Button {
         visible: !root.windowMode
         text: "Open window"
         focusable: root.windowMode
@@ -794,7 +793,7 @@ FocusScope {
         foreground: root.foreground
         onClicked: root.windowRequested()
       }
-      Button {
+      Ui.Button {
         text: "Close"
         focusable: root.windowMode
         bordered: true
@@ -805,10 +804,10 @@ FocusScope {
 
     RowLayout {
       Layout.fillWidth: true
-      spacing: Style.space(8)
+      spacing: Commons.Style.space(8)
 
       Rectangle {
-        width: Style.space(8)
+        width: Commons.Style.space(8)
         height: width
         radius: width / 2
         color: root.connected
@@ -823,46 +822,46 @@ FocusScope {
           : (root.running ? "No controller connected" : "Not running")
         color: root.foreground
         elide: Text.ElideRight
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.body
       }
 
       // Whatever is held right now, sitting just before the controls so
       // you can watch the pad answer while your hands are on it.
       Row {
-        spacing: Style.space(4)
+        spacing: Commons.Style.space(4)
 
         Repeater {
           model: root.heldButtons
 
           Rectangle {
             required property string modelData
-            radius: Style.space(4)
-            color: Style.selectedAccentFill
-            implicitWidth: heldLabel.implicitWidth + Style.space(10)
-            implicitHeight: heldLabel.implicitHeight + Style.space(4)
+            radius: Commons.Style.space(4)
+            color: Commons.Style.selectedAccentFill
+            implicitWidth: heldLabel.implicitWidth + Commons.Style.space(10)
+            implicitHeight: heldLabel.implicitHeight + Commons.Style.space(4)
 
             Text {
               id: heldLabel
               anchors.centerIn: parent
               text: root.service ? root.service.labelFor(parent.modelData) : parent.modelData
               color: Commons.Color.accent
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.family: Commons.Style.font.family
+              font.pixelSize: Commons.Style.font.caption
               font.bold: true
             }
           }
         }
       }
 
-      ToggleSwitch {
+      Ui.ToggleSwitch {
         checked: root.switchedOn
         busy: root.service ? root.service.enableBusy : false
         foreground: root.foreground
         onToggled: if (!root.settingsBusy && root.service) root.service.toggleEnabled()
       }
 
-      PanelActionButton {
+      Ui.PanelActionButton {
         iconText: "󰑐"
         tooltipText: root.running ? "Reload bindings" : "Start again"
         foreground: root.foreground
@@ -875,18 +874,18 @@ FocusScope {
     RowLayout {
       Layout.fillWidth: true
       visible: root.lastError !== ""
-      spacing: Style.space(8)
+      spacing: Commons.Style.space(8)
 
       Text {
         Layout.fillWidth: true
         text: root.lastError
         color: Commons.Color.urgent
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
-      PanelActionButton {
+      Ui.PanelActionButton {
         Layout.alignment: Qt.AlignTop
         iconText: "󰅖"
         tooltipText: "Dismiss"
@@ -902,8 +901,8 @@ FocusScope {
       text: root.statusMessage
       color: Commons.Color.urgent
       wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
     }
 
     Text {
@@ -913,11 +912,11 @@ FocusScope {
       textFormat: Text.PlainText
       color: Qt.darker(root.foreground, 1.5)
       wrapMode: Text.WordWrap
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.family: Commons.Style.font.family
+      font.pixelSize: Commons.Style.font.caption
     }
 
-    ButtonGroup {
+    Ui.ButtonGroup {
       objectName: "editorTabs"
       options: [{ value: "bindings", label: "Bindings" }, { value: "advanced", label: "Advanced" }]
       value: root.currentTab
@@ -926,7 +925,7 @@ FocusScope {
       onChanged: function (value) { root.currentTab = value }
     }
 
-    PanelSeparator {
+    Ui.PanelSeparator {
       Layout.fillWidth: true
       foreground: root.foreground
     }
@@ -937,9 +936,9 @@ FocusScope {
       objectName: "bindingsPage"
       Layout.fillWidth: true
       visible: root.currentTab === "bindings"
-      spacing: Style.space(10)
+      spacing: Commons.Style.space(10)
 
-      PanelSectionHeader {
+      Ui.PanelSectionHeader {
         text: root.bindings.length + " BINDINGS"
           + (root.offCount > 0 ? " · " + root.offCount + " OFF" : "")
           + (root.profileNames.length > 1 ? " · " + root.activeProfile.toUpperCase() : "")
@@ -950,7 +949,7 @@ FocusScope {
       Flickable {
         id: bindingFlick
         Layout.fillWidth: true
-        Layout.preferredHeight: Math.min(bindingColumn.implicitHeight, Style.space(280))
+        Layout.preferredHeight: Math.min(bindingColumn.implicitHeight, Commons.Style.space(280))
         contentWidth: width
         contentHeight: bindingColumn.implicitHeight
         clip: true
@@ -976,8 +975,8 @@ FocusScope {
 
         ColumnLayout {
           id: bindingColumn
-          width: bindingFlick.width - (bindingFlick.interactive ? bindingScroll.width + Style.space(6) : 0)
-          spacing: Style.space(2)
+          width: bindingFlick.width - (bindingFlick.interactive ? bindingScroll.width + Commons.Style.space(6) : 0)
+          spacing: Commons.Style.space(2)
 
           Repeater {
             id: bindingRepeater
@@ -989,9 +988,9 @@ FocusScope {
               required property int index
               readonly property bool isOn: modelData.enabled !== false
               Layout.fillWidth: true
-              implicitHeight: rowLayout.implicitHeight + Style.space(6)
+              implicitHeight: rowLayout.implicitHeight + Commons.Style.space(6)
 
-              CursorSurface {
+              Ui.CursorSurface {
                 anchors.fill: parent
                 hasCursor: root.cursorIndex === bindingRow.index
                 foreground: root.foreground
@@ -1011,18 +1010,18 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.leftMargin: Style.space(4)
-                spacing: Style.space(8)
+                anchors.leftMargin: Commons.Style.space(4)
+                spacing: Commons.Style.space(8)
                 opacity: bindingRow.isOn ? 1.0 : 0.45
 
                 Text {
-                  Layout.preferredWidth: Style.space(112)
+                  Layout.preferredWidth: Commons.Style.space(112)
                   Layout.alignment: Qt.AlignTop
                   text: bindingRow.modelData.label || bindingRow.modelData.combo
                   color: Commons.Color.accent
                   elide: Text.ElideRight
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
+                  font.family: Commons.Style.font.family
+                  font.pixelSize: Commons.Style.font.caption
                   font.bold: true
                 }
 
@@ -1039,8 +1038,8 @@ FocusScope {
                     text: bindingRow.modelData.description || ""
                     color: root.foreground
                     elide: Text.ElideRight
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
+                    font.family: Commons.Style.font.family
+                    font.pixelSize: Commons.Style.font.caption
                   }
 
                   Text {
@@ -1051,12 +1050,12 @@ FocusScope {
                       + (bindingRow.isOn ? "" : "  ·  off")
                     color: Qt.darker(root.foreground, 1.6)
                     elide: Text.ElideRight
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
+                    font.family: Commons.Style.font.family
+                    font.pixelSize: Commons.Style.font.caption
                   }
                 }
 
-                PanelActionButton {
+                Ui.PanelActionButton {
                   Layout.alignment: Qt.AlignTop
                   iconText: "󰆴"
                   tooltipText: "Remove binding"
@@ -1071,12 +1070,12 @@ FocusScope {
         }
       }
 
-      PanelSeparator {
+      Ui.PanelSeparator {
         Layout.fillWidth: true
         foreground: root.foreground
       }
 
-      PanelSectionHeader {
+      Ui.PanelSectionHeader {
         text: root.draftExisting ? "EDIT BINDING" : "ADD BINDING"
         foreground: root.foreground
       }
@@ -1088,15 +1087,15 @@ FocusScope {
         text: root.captureHint
         color: root.capturing ? Commons.Color.accent : Qt.darker(root.foreground, 1.5)
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
       RowLayout {
         Layout.fillWidth: true
-        spacing: Style.space(8)
+        spacing: Commons.Style.space(8)
 
-        Button {
+        Ui.Button {
           focusable: root.windowMode
           text: root.capturing
             ? "Waiting…"
@@ -1109,7 +1108,7 @@ FocusScope {
           onClicked: root.beginCapture()
         }
 
-        Button {
+        Ui.Button {
           focusable: root.windowMode
           text: root.draftIsCommand ? "Command" : "Keys"
           tooltipText: root.draftIsCommand
@@ -1122,7 +1121,7 @@ FocusScope {
 
         Item { Layout.fillWidth: true }
 
-        Button {
+        Ui.Button {
           focusable: root.windowMode
           text: "Repeat"
           tooltipText: "Fire again while held, for volume and brightness"
@@ -1135,7 +1134,7 @@ FocusScope {
           }
         }
 
-        Button {
+        Ui.Button {
           focusable: root.windowMode
           text: "Hold"
           tooltipText: "Only fire after a long press, for anything destructive"
@@ -1150,7 +1149,7 @@ FocusScope {
       }
 
       // Both catalogs load the first time the picker opens, never before.
-      SearchableDropdown {
+      Ui.SearchableDropdown {
         id: actionPicker
         objectName: "actionPicker"
         onPopupOpenChanged: if (popupOpen) {
@@ -1159,8 +1158,8 @@ FocusScope {
           Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) })
         }
         Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
-        popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
-        popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
+        popupMinHeight: Math.min(Commons.Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
+        popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Commons.Style.space(50) - 5 * Commons.Style.spacing.labelGap) / 6))
         Item { id: actionPickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
         Layout.fillWidth: true
         visible: !root.draftIsCommand
@@ -1185,11 +1184,11 @@ FocusScope {
         textFormat: Text.PlainText
         color: Qt.darker(root.foreground, 1.5)
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
-      TextField {
+      Ui.TextField {
         id: actionField
         onTextChanged: root.cancelProfileDelete()
         Layout.fillWidth: true
@@ -1204,7 +1203,7 @@ FocusScope {
         Keys.onEscapePressed: keyCatcher.forceActiveFocus()
       }
 
-      TextField {
+      Ui.TextField {
         id: descriptionField
         onTextChanged: root.cancelProfileDelete()
         Layout.fillWidth: true
@@ -1219,9 +1218,9 @@ FocusScope {
 
       RowLayout {
         Layout.fillWidth: true
-        spacing: Style.space(8)
+        spacing: Commons.Style.space(8)
 
-        Button {
+        Ui.Button {
           focusable: root.windowMode
           text: root.draftExisting ? "Save changes" : "Save binding"
           enabled: root.draftReady && !root.bindingWritesBlocked
@@ -1232,7 +1231,7 @@ FocusScope {
 
         Item { Layout.fillWidth: true }
 
-        Button {
+        Ui.Button {
           focusable: root.windowMode
           text: "Clear"
           bordered: true
@@ -1251,15 +1250,16 @@ FocusScope {
       objectName: "advancedPage"
       Layout.fillWidth: true
       visible: root.currentTab === "advanced"
-      spacing: Style.space(10)
+      spacing: Commons.Style.space(10)
 
-      PanelSectionHeader { text: "CONTROLLER MODE"; foreground: root.foreground }
+      Ui.PanelSectionHeader { text: "CONTROLLER MODE"; foreground: root.foreground }
 
       RowLayout {
         Layout.fillWidth: true
-        spacing: Style.space(8)
-        Button {
+        spacing: Commons.Style.space(8)
+        Ui.Button {
           objectName: "modeOffButton"
+          visible: false // Portal retains explicit Game/OS ownership.
           text: "Off"
           tooltipText: "No mode switching: bindings work and the controller stays shared"
           selected: !root.configuredModesEnabled
@@ -1269,7 +1269,7 @@ FocusScope {
           foreground: root.foreground
           onClicked: if (root.configuredModesEnabled) root.setInputMode("disable")
         }
-        Button {
+        Ui.Button {
           objectName: "gameModeButton"
           text: "Game"
           tooltipText: "Leave the controller to games; bindings are off"
@@ -1280,7 +1280,7 @@ FocusScope {
           foreground: root.foreground
           onClicked: root.setInputMode("game")
         }
-        Button {
+        Ui.Button {
           objectName: "osModeButton"
           text: "OS"
           tooltipText: "Take the controller over to drive the desktop"
@@ -1299,11 +1299,11 @@ FocusScope {
         textFormat: Text.PlainText
         color: Qt.darker(root.foreground, 1.5)
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
-      PanelSectionHeader { text: "PROFILES"; foreground: root.foreground }
+      Ui.PanelSectionHeader { text: "PROFILES"; foreground: root.foreground }
 
       Text {
         objectName: "gameProfileSummary"
@@ -1313,8 +1313,8 @@ FocusScope {
         textFormat: Text.PlainText
         color: root.foreground
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
       ColumnLayout {
@@ -1322,14 +1322,14 @@ FocusScope {
         Layout.fillWidth: true
         visible: root.profileEditingVisible
         enabled: !root.settingsBusy && root.profilesLoaded
-        spacing: Style.space(8)
+        spacing: Commons.Style.space(8)
 
-        SearchableDropdown {
+        Ui.SearchableDropdown {
           id: profilePicker
           onPopupOpenChanged: if (popupOpen) Qt.callLater(function() { root.focusRequested(root.focusScrollTarget) })
           Layout.bottomMargin: popupOpen ? root.pickerPopupHeight : 0
-          popupMinHeight: Math.min(Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
-          popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Style.space(50) - 5 * Style.spacing.labelGap) / 6))
+          popupMinHeight: Math.min(Commons.Style.spacing.searchablePopupMinHeight, root.pickerPopupHeight)
+          popupRowHeight: Math.max(1, Math.floor((root.pickerPopupHeight - Commons.Style.space(50) - 5 * Commons.Style.spacing.labelGap) / 6))
           Item { id: profilePickerExtent; width: parent.width; height: parent.height + root.pickerPopupHeight }
           objectName: "osProfilePicker"
           Layout.fillWidth: true
@@ -1347,11 +1347,11 @@ FocusScope {
 
         GridLayout {
           Layout.fillWidth: true
-          columns: root.width < Style.space(420) ? 1 : 3
-          columnSpacing: Style.space(8)
-          rowSpacing: Style.space(8)
+          columns: root.width < Commons.Style.space(420) ? 1 : 3
+          columnSpacing: Commons.Style.space(8)
+          rowSpacing: Commons.Style.space(8)
 
-          TextField {
+          Ui.TextField {
             id: profileNameField
             onTextChanged: {
               root.cancelProfileDelete()
@@ -1364,7 +1364,7 @@ FocusScope {
             foreground: root.foreground
             onAccepted: root.changeProfile("create", text)
           }
-          Button {
+          Ui.Button {
             objectName: "copyProfileButton"
             text: "Create profile"
             tooltipText: "A new profile starting from this one's bindings and pointer settings"
@@ -1373,7 +1373,7 @@ FocusScope {
             foreground: root.foreground
             onClicked: root.changeProfile("create", profileNameField.text)
           }
-          Button {
+          Ui.Button {
             objectName: "renameProfileButton"
             text: "Rename current"
             enabled: profileNameField.text.trim() !== "" && profileNameField.text.trim() !== root.activeProfile
@@ -1391,16 +1391,16 @@ FocusScope {
           text: "Enter a name for the new profile."
           color: Commons.Color.urgent
           wrapMode: Text.WordWrap
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
         }
 
         RowLayout {
           Layout.fillWidth: true
-          spacing: Style.space(8)
+          spacing: Commons.Style.space(8)
           visible: root.profileNames.length > 1
 
-          Dropdown {
+          Ui.Dropdown {
             objectName: "deleteProfilePicker"
             Layout.fillWidth: true
             label: "Profile to delete"
@@ -1409,7 +1409,7 @@ FocusScope {
             foreground: root.foreground
             onChanged: function(value) { root.cancelProfileDelete(); root.profileDeleteSelection = value }
           }
-          Button {
+          Ui.Button {
             objectName: "deleteProfileButton"
             Layout.alignment: Qt.AlignBottom
             text: "Delete profile"
@@ -1429,11 +1429,11 @@ FocusScope {
           textFormat: Text.PlainText
           color: root.foreground
           wrapMode: Text.WordWrap
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
         }
 
-        Dropdown {
+        Ui.Dropdown {
           objectName: "replacementProfilePicker"
           Layout.fillWidth: true
           visible: root.deleteProfileTarget === root.activeProfile && root.deleteProfileTarget !== ""
@@ -1447,8 +1447,8 @@ FocusScope {
         RowLayout {
           Layout.fillWidth: true
           visible: root.deleteProfileTarget !== ""
-          spacing: Style.space(8)
-          Button {
+          spacing: Commons.Style.space(8)
+          Ui.Button {
             objectName: "confirmDeleteProfileButton"
             text: "Confirm delete"
             focusable: root.windowMode
@@ -1456,7 +1456,7 @@ FocusScope {
             foreground: Commons.Color.urgent
             onClicked: root.confirmProfileDelete()
           }
-          Button {
+          Ui.Button {
             objectName: "cancelDeleteProfileButton"
             text: "Cancel"
             focusable: root.windowMode
@@ -1475,11 +1475,11 @@ FocusScope {
         textFormat: Text.PlainText
         color: Commons.Color.urgent
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
-      PanelSectionHeader { text: "POINTER AND SCROLLING"; foreground: root.foreground }
+      Ui.PanelSectionHeader { text: "POINTER AND SCROLLING"; foreground: root.foreground }
 
       Text {
         Layout.fillWidth: true
@@ -1487,8 +1487,8 @@ FocusScope {
         textFormat: Text.PlainText
         color: Qt.darker(root.foreground, 1.5)
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
       ColumnLayout {
@@ -1496,9 +1496,9 @@ FocusScope {
         Layout.fillWidth: true
         visible: root.pointerEditingVisible
         enabled: !root.settingsBusy
-        spacing: Style.space(8)
+        spacing: Commons.Style.space(8)
 
-        Toggle {
+        Ui.Toggle {
           objectName: "pointerEnabledToggle"
           Layout.fillWidth: true
           label: "Use a stick as the mouse (OS mode)"
@@ -1511,11 +1511,11 @@ FocusScope {
         GridLayout {
           Layout.fillWidth: true
           visible: root.pointerDraft.enabled
-          columns: root.width < Style.space(460) ? 1 : 2
-          columnSpacing: Style.space(12)
-          rowSpacing: Style.space(8)
+          columns: root.width < Commons.Style.space(460) ? 1 : 2
+          columnSpacing: Commons.Style.space(12)
+          rowSpacing: Commons.Style.space(8)
 
-          Dropdown {
+          Ui.Dropdown {
             objectName: "pointerStickPicker"
             Layout.fillWidth: true
             label: "Pointer stick"
@@ -1524,7 +1524,7 @@ FocusScope {
             foreground: root.foreground
             onChanged: function(value) { root.editPointerSetting("pointer_stick", value) }
           }
-          Dropdown {
+          Ui.Dropdown {
             objectName: "scrollStickPicker"
             Layout.fillWidth: true
             label: "Scroll stick"
@@ -1533,7 +1533,7 @@ FocusScope {
             foreground: root.foreground
             onChanged: function(value) { root.editPointerSetting("scroll_stick", value) }
           }
-          NumberField {
+          Ui.NumberField {
             objectName: "pointerSpeedField"
             Layout.fillWidth: true
             label: "Pointer speed (px/s)"
@@ -1542,7 +1542,7 @@ FocusScope {
             foreground: root.foreground
             onModified: function(value) { root.editPointerSetting("speed", value) }
           }
-          NumberField {
+          Ui.NumberField {
             objectName: "scrollSpeedField"
             Layout.fillWidth: true
             label: "Scroll speed (steps/s)"
@@ -1551,7 +1551,7 @@ FocusScope {
             foreground: root.foreground
             onModified: function(value) { root.editPointerSetting("scroll_speed", value) }
           }
-          NumberField {
+          Ui.NumberField {
             objectName: "pointerDeadZoneField"
             Layout.fillWidth: true
             label: "Pointer dead zone (%)"
@@ -1560,7 +1560,7 @@ FocusScope {
             foreground: root.foreground
             onModified: function(value) { root.editPointerSetting("dead_zone", value / 100) }
           }
-          NumberField {
+          Ui.NumberField {
             objectName: "scrollDeadZoneField"
             Layout.fillWidth: true
             label: "Scroll dead zone (%)"
@@ -1571,9 +1571,9 @@ FocusScope {
           }
           ColumnLayout {
             Layout.fillWidth: true
-            spacing: Style.spacing.labelGap
-            Text { text: "Left click button"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-            TextField {
+            spacing: Commons.Style.spacing.labelGap
+            Text { text: "Left click button"; color: root.foreground; font.family: Commons.Style.font.family; font.pixelSize: Commons.Style.font.caption }
+            Ui.TextField {
               objectName: "leftClickTokenField"
               Layout.fillWidth: true
               foreground: root.foreground
@@ -1584,9 +1584,9 @@ FocusScope {
           }
           ColumnLayout {
             Layout.fillWidth: true
-            spacing: Style.spacing.labelGap
-            Text { text: "Right click button"; color: root.foreground; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-            TextField {
+            spacing: Commons.Style.spacing.labelGap
+            Text { text: "Right click button"; color: root.foreground; font.family: Commons.Style.font.family; font.pixelSize: Commons.Style.font.caption }
+            Ui.TextField {
               objectName: "rightClickTokenField"
               Layout.fillWidth: true
               foreground: root.foreground
@@ -1597,7 +1597,7 @@ FocusScope {
           }
         }
 
-        Toggle {
+        Ui.Toggle {
           objectName: "invertScrollToggle"
           Layout.fillWidth: true
           visible: root.pointerDraft.enabled
@@ -1614,14 +1614,14 @@ FocusScope {
           textFormat: Text.PlainText
           color: Qt.darker(root.foreground, 1.5)
           wrapMode: Text.WordWrap
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
         }
 
         RowLayout {
           Layout.fillWidth: true
-          spacing: Style.space(8)
-          Button {
+          spacing: Commons.Style.space(8)
+          Ui.Button {
             objectName: "applyPointerButton"
             text: "Apply"
             enabled: root.pointerDirty && !root.settingsBusy
@@ -1630,7 +1630,7 @@ FocusScope {
             foreground: root.foreground
             onClicked: root.applyPointerSettings()
           }
-          Button {
+          Ui.Button {
             objectName: "resetPointerButton"
             text: "Reset"
             enabled: root.pointerDirty && !root.settingsBusy
@@ -1642,15 +1642,15 @@ FocusScope {
           Text {
             text: root.pointerDirty ? "Unsaved changes" : "Saved"
             color: Qt.darker(root.foreground, 1.5)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            font.family: Commons.Style.font.family
+            font.pixelSize: Commons.Style.font.caption
           }
         }
       }
 
-      PanelSectionHeader { text: "HYPRLAND OVERLAPS"; foreground: root.foreground }
+      Ui.PanelSectionHeader { text: "HYPRLAND OVERLAPS"; foreground: root.foreground }
 
-      Button {
+      Ui.Button {
         text: "Check Hyprland shortcuts"
         tooltipText: "List Hyprland shortcuts that use the same buttons as your bindings"
         focusable: root.windowMode
@@ -1666,8 +1666,8 @@ FocusScope {
         textFormat: Text.PlainText
         color: Qt.darker(root.foreground, 1.5)
         wrapMode: Text.WordWrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.family: Commons.Style.font.family
+        font.pixelSize: Commons.Style.font.caption
       }
 
       Repeater {
@@ -1682,8 +1682,8 @@ FocusScope {
           textFormat: Text.PlainText
           color: root.foreground
           wrapMode: Text.WordWrap
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.family: Commons.Style.font.family
+          font.pixelSize: Commons.Style.font.caption
         }
       }
     }
